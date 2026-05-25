@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MiPOS Pro</title>
+</head>
+<body>
+ 
+<!-- HEADER -->
+<div class="hdr">
+  <div class="logo">
+    <span class="logo-ic">⬡</span>
+    <div>
+      <div>MiPOS</div>
+      <div class="logo-sub">Sistema de Punto de Venta</div>
+    </div>
+  </div>
+  <div class="hdr-right">
+    <div class="hdr-clock" id="hdr-clock">--:--:--</div>
+    <button class="hdr-alert" onclick="irTab('inv');setTimeout(()=>pintarInv(),50)" title="Alertas de stock" id="btn-alerta">
+      🔔<span class="alert-badge" id="alert-count" style="display:none">0</span>
+    </button>
+    <button class="btn btn-outline btn-sm" onclick="exportarExcel()">📊 Exportar Excel</button>
+    <button class="btn btn-outline btn-sm" onclick="abrirModal('mv')">🛒 Nueva Venta</button>
+    <button class="btn btn-gold btn-sm" onclick="abrirNuevoProducto()">＋ Producto</button>
+  </div>
+</div>
+ 
+<!-- NAV -->
+<div class="nav">
+  <div class="ntab active" id="ntab-dash" onclick="irTab('dash')">📊 Dashboard</div>
+  <div class="ntab" id="ntab-inv" onclick="irTab('inv')">📦 Inventario <span class="ntab-badge" id="nb-stock" style="display:none">!</span></div>
+  <div class="ntab" id="ntab-prov" onclick="irTab('prov')">🏭 Proveedores</div>
+  <div class="ntab" id="ntab-vtas" onclick="irTab('vtas')">💰 Ventas</div>
+  <div class="ntab" id="ntab-merm" onclick="irTab('merm')">⚠️ Mermas</div>
+  <div class="ntab" id="ntab-emp" onclick="irTab('emp')">👥 Empleados</div>
+</div>
+ 
+<!-- =================== DASHBOARD =================== -->
+<div class="page active" id="page-dash">
+  <div class="ph"><div class="ph-title">📊 Dashboard General</div><div class="ph-actions"><button class="btn btn-outline btn-sm" onclick="exportarExcel()">📊 Exportar Excel</button></div></div>
+  <div class="sg6" id="dash-stats"></div>
+  <div id="dash-alert-panel"></div>
+  <div class="charts-row">
+    <div class="chart-box"><div class="chart-title">Ventas por día (últimos 7 días)</div><canvas id="chart-dash-ventas" height="140"></canvas></div>
+    <div class="chart-box"><div class="chart-title">Ingresos vs Costos vs Ganancia</div><canvas id="chart-dash-icg" height="140"></canvas></div>
+  </div>
+  <div class="charts-row">
+    <div class="chart-box"><div class="chart-title">🏆 Top 5 productos más vendidos</div><canvas id="chart-dash-top" height="140"></canvas></div>
+    <div class="chart-box"><div class="chart-title">🐢 Top 5 productos menos vendidos</div><canvas id="chart-dash-bottom" height="140"></canvas></div>
+  </div>
+  <div class="charts-row">
+    <div class="chart-box"><div class="chart-title">Distribución de categorías (stock)</div><canvas id="chart-dash-cat" height="140"></canvas></div>
+    <div class="chart-box" id="dash-meno-panel">
+      <div class="chart-title">📦 Sin movimiento (nunca vendidos)</div>
+      <div id="dash-sin-venta-list" style="font-size:12px;"></div>
+    </div>
+  </div>
+  <div class="dash-row">
+    <div class="dash-recent" id="dash-recent-ventas">
+      <div class="dash-recent-title">Últimas ventas</div>
+      <div id="dr-vtas-list"><div style="color:var(--text3);font-size:13px;">Sin ventas aún</div></div>
+    </div>
+    <div class="dash-recent" id="dash-stock-alerta">
+      <div class="dash-recent-title">⚠️ Stock bajo</div>
+      <div id="dr-stock-list"><div style="color:var(--text3);font-size:13px;">Todo en orden ✓</div></div>
+    </div>
+  </div>
+</div>
+ 
+<!-- =================== INVENTARIO =================== -->
+<div class="page" id="page-inv">
+  <div class="ph">
+    <div class="ph-title">📦 Inventario</div>
+    <div class="ph-actions">
+      <button class="btn btn-outline btn-sm" onclick="exportarInvExcel()">📊 Exportar</button>
+      <button class="btn btn-gold btn-sm" onclick="abrirNuevoProducto()">＋ Agregar Producto</button>
+    </div>
+  </div>
+  <div class="sg4">
+    <div class="sc"><div class="sc-label">Total Productos</div><div class="sc-val c-gold" id="s-nprod">0</div><div class="sc-sub">Referencias únicas</div></div>
+    <div class="sc"><div class="sc-label">Artículos en Stock</div><div class="sc-val c-white" id="s-stock">0</div><div class="sc-sub">Unidades totales</div></div>
+    <div class="sc"><div class="sc-label">Valor del Inventario</div><div class="sc-val c-green" id="s-valor">$0</div><div class="sc-sub">A precio de venta</div></div>
+    <div class="sc"><div class="sc-label">Stock Bajo (≤10)</div><div class="sc-val c-red" id="s-bajo">0</div><div class="sc-sub">Requieren reposición</div></div>
+  </div>
+  <div class="filter-row">
+    <span class="filter-label">Categoría:</span>
+    <select id="fil-cat" onchange="pintarInv()"><option value="">Todas</option></select>
+    <span class="filter-label">Proveedor:</span>
+    <select id="fil-prov" onchange="pintarInv()"><option value="">Todos</option></select>
+    <span class="filter-label">Stock:</span>
+    <select id="fil-stock" onchange="pintarInv()">
+      <option value="">Todos</option>
+      <option value="bajo">Stock bajo (≤10)</option>
+      <option value="medio">Stock medio (11-20)</option>
+      <option value="ok">Stock Completo (&gt;20)</option>
+    </select>
+  </div>
+  <div class="srch"><span class="srch-ic">🔍</span><input id="q-inv" placeholder="Buscar por nombre, SKU o categoría..." oninput="pintarInv()"></div>
+  <div class="tbl-wrap"><div class="tbl-scroll">
+    <table>
+      <thead><tr>
+        <th>Producto</th><th>SKU</th><th>Proveedor</th><th>Categoría</th>
+        <th>Color de Fibra</th><th>Marca</th><th>Material Base</th><th>Hilo Refuerzo</th><th>Colorante</th>
+        <th>Cantidad</th><th>Costo</th><th>Precio Venta</th><th>Margen</th><th>Valor Total</th><th>Estado</th><th>Acciones</th>
+      </tr></thead>
+      <tbody id="tb-inv"></tbody>
+    </table>
+  </div></div>
+</div>
+ 
+<!-- =================== PROVEEDORES =================== -->
+<div class="page" id="page-prov">
+  <div class="ph">
+    <div class="ph-title">🏭 Proveedores</div>
+    <div class="ph-actions">
+      <button class="btn btn-outline btn-sm" onclick="exportarProvExcel()">📊 Exportar</button>
+      <button class="btn btn-gold btn-sm" onclick="abrirNuevoProveedor()">＋ Agregar Proveedor</button>
+    </div>
+  </div>
+  <div class="srch"><span class="srch-ic">🔍</span><input id="q-prov" placeholder="Buscar proveedores..." oninput="pintarProv()"></div>
+  <div class="tbl-wrap"><div class="tbl-scroll">
+    <table>
+      <thead><tr><th>Empresa</th><th>Contacto</th><th>Teléfono</th><th>Email</th><th>RFC</th><th>CURP</th><th>NSS</th><th>Dirección</th><th>Productos</th><th>Notas</th><th>Acciones</th></tr></thead>
+      <tbody id="tb-prov"></tbody>
+    </table>
+  </div></div>
+</div>
+ 
+<!-- =================== VENTAS =================== -->
+<div class="page" id="page-vtas">
+  <div class="ph">
+    <div class="ph-title">💰 Ventas</div>
+    <div class="ph-actions">
+      <button class="btn btn-outline btn-sm" onclick="exportarVtasExcel()">📊 Exportar</button>
+      <button class="btn btn-gold btn-sm" onclick="abrirModal('mv')">＋ Nueva Venta</button>
+    </div>
+  </div>
+  <div class="sg4">
+    <div class="sc"><div class="sc-label">Total Ingresos</div><div class="sc-val c-green" id="sv-total">$0</div></div>
+    <div class="sc"><div class="sc-label">Ganancia Total</div><div class="sc-val c-gold" id="sv-gan">$0</div></div>
+    <div class="sc"><div class="sc-label">Ventas Realizadas</div><div class="sc-val c-white" id="sv-num">0</div></div>
+    <div class="sc"><div class="sc-label">Productos Vendidos</div><div class="sc-val c-blue" id="sv-pv">0</div></div>
+  </div>
+  <div class="filter-row">
+    <span class="filter-label">Empleado:</span>
+    <select id="fil-vemp" onchange="pintarVtas()"><option value="">Todos</option></select>
+    <span class="filter-label">Producto:</span>
+    <select id="fil-vprod" onchange="pintarVtas()"><option value="">Todos</option></select>
+    <span class="filter-label">Desde:</span>
+    <input type="date" id="fil-vfrom" onchange="pintarVtas()">
+    <span class="filter-label">Hasta:</span>
+    <input type="date" id="fil-vto" onchange="pintarVtas()">
+    <button class="btn btn-outline btn-sm" onclick="limpiarFiltrosVtas()">✕ Limpiar</button>
+  </div>
+  <div class="srch"><span class="srch-ic">🔍</span><input id="q-vtas" placeholder="Buscar por N° Ticket, producto, empleado..." oninput="pintarVtas()"></div>
+  <div class="tbl-wrap"><div class="tbl-scroll">
+    <table>
+      <thead><tr><th>N° Ticket</th><th>Fecha/Hora</th><th>Producto</th><th>Empleado</th><th>Cantidad</th><th>Precio Unit.</th><th>Subtotal</th><th>Ganancia</th><th>Recibo</th></tr></thead>
+      <tbody id="tb-vtas"></tbody>
+    </table>
+  </div></div>
+</div>
+ 
+<!-- =================== MERMAS =================== -->
+<div class="page" id="page-merm">
+  <div class="ph">
+    <div class="ph-title">⚠️ Mermas</div>
+    <div class="ph-actions">
+      <button class="btn btn-outline btn-sm" onclick="exportarMermExcel()">📊 Exportar</button>
+      <button class="btn btn-gold btn-sm" onclick="abrirNuevaMerma()">＋ Registrar Merma</button>
+    </div>
+  </div>
+  <div class="sg3">
+    <div class="sc"><div class="sc-label">Pérdida en Costo</div><div class="sc-val c-red" id="sm-costo">$0</div></div>
+    <div class="sc"><div class="sc-label">Valor Perdido</div><div class="sc-val c-red" id="sm-valor">$0</div></div>
+    <div class="sc"><div class="sc-label">Ganancia Perdida</div><div class="sc-val c-red" id="sm-ganancia">$0</div></div>
+  </div>
+  <div class="filter-row">
+    <span class="filter-label">Motivo:</span>
+    <select id="fil-mmotivo" onchange="pintarMerm()">
+      <option value="">Todos</option>
+      <option>Producto dañado</option><option>Extravío</option><option>Robo</option><option>Vencimiento</option><option>Error operativo</option><option>Otro</option>
+    </select>
+    <span class="filter-label">Culpable:</span>
+    <select id="fil-mculpable" onchange="pintarMerm()"><option value="">Todos</option></select>
+  </div>
+  <div class="srch"><span class="srch-ic">🔍</span><input id="q-merm" placeholder="Buscar mermas..." oninput="pintarMerm()"></div>
+  <div class="tbl-wrap"><div class="tbl-scroll">
+    <table>
+      <thead><tr><th>#</th><th>Fecha/Hora</th><th>Producto</th><th>Motivo / Causa</th><th>Culpable / Responsable</th><th>Descripción</th><th>Cantidad</th><th>Costo Perdido</th><th>Ganancia Perdida</th></tr></thead>
+      <tbody id="tb-merm"></tbody>
+    </table>
+  </div></div>
+</div>
+ 
+<!-- =================== EMPLEADOS =================== -->
+<div class="page" id="page-emp">
+  <div class="ph">
+    <div class="ph-title">👥 Empleados</div>
+    <div class="ph-actions">
+      <button class="btn btn-outline btn-sm" onclick="exportarEmpExcel()">📊 Exportar</button>
+      <button class="btn btn-gold btn-sm" onclick="abrirNuevoEmpleado()">＋ Agregar Empleado</button>
+    </div>
+  </div>
+  <div class="emp-grid" id="grid-emp"></div>
+</div>
+ 
+ 
+<!-- ====================== MODALES ====================== -->
+ 
+<!-- NUEVA VENTA (MULTI-PRODUCTO) -->
+<div class="overlay" id="mv">
+  <div class="modal modal-wide">
+    <button class="modal-close" onclick="cerrarModal('mv')">✕</button>
+    <h2>🛒 Nueva Venta</h2>
+    <div class="scanner-bar" id="scanner-bar">
+      <span class="scanner-ic">📡</span>
+      <input type="text" class="scanner-input" id="scanner-input"
+        placeholder="Escanea un código de barras / SKU o escribe aquí..."
+        oninput="scannerInput(this.value)"
+        onkeydown="if(event.key==='Enter'){scannerConfirm();}"
+        autocomplete="off" autocorrect="off" spellcheck="false">
+      <span class="scanner-status on" id="scanner-status">● Listo</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="fg"><label>Empleado</label><select id="mv-emp"></select></div>
+      <div class="fg"><label>Método de pago</label>
+        <select id="mv-pago"><option>Efectivo</option><option>Tarjeta de débito</option><option>Tarjeta de crédito</option><option>Transferencia</option></select>
+      </div>
+    </div>
+    <div class="fg"><label>Nota (opcional)</label><input type="text" id="mv-nota" placeholder="Nota de la venta..."></div>
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px;">➕ Agregar producto al carrito</div>
+      <div style="display:grid;grid-template-columns:1fr 120px auto;gap:10px;align-items:flex-end;">
+        <div class="fg" style="margin:0"><label>Producto</label><select id="mv-prod-sel" onchange="mvActualizarStock()"></select></div>
+        <div class="fg" style="margin:0"><label id="mv-stock-lbl" style="white-space:nowrap">Cantidad</label><input type="number" id="mv-qty-sel" min="1" value="1" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:7px;padding:10px 12px;color:var(--white);font-size:13px;outline:none;"></div>
+        <button class="btn btn-gold" onclick="mvAgregarItem()" style="align-self:flex-end;white-space:nowrap;">＋ Agregar</button>
+      </div>
+    </div>
+    <div style="margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">🛒 Carrito</div>
+      <div class="tbl-wrap"><div class="tbl-scroll">
+        <table>
+          <thead><tr><th>Producto</th><th>Precio Unit.</th><th>Cantidad</th><th>Subtotal</th><th></th></tr></thead>
+          <tbody id="mv-carrito-tbody">
+            <tr id="mv-carrito-empty"><td colspan="5" style="text-align:center;color:var(--text3);padding:20px;font-size:13px;">Agrega productos al carrito para comenzar</td></tr>
+          </tbody>
+        </table>
+      </div></div>
+    </div>
+    <div class="tbox"><span class="tbox-lbl">💰 Total a pagar:</span><span class="tbox-val" id="mv-total">$0</span></div>
+    <div class="ma">
+      <button class="btn-cncl" onclick="cerrarModal('mv')">Cancelar</button>
+      <button class="btn-ok" onclick="hacerVenta()">✅ Realizar Venta</button>
+    </div>
+  </div>
+</div>
+ 
+<!-- RECIBO / TICKET -->
+<div class="overlay" id="mrecibo">
+  <div class="modal">
+    <button class="modal-close" onclick="cerrarModal('mrecibo')">✕</button>
+    <h2>🧾 Ticket de Venta</h2>
+    <div class="receipt" id="receipt-content"></div>
+    <div class="ma">
+      <button class="btn-cncl" onclick="cerrarModal('mrecibo')">Cerrar</button>
+      <button class="btn-ok" onclick="imprimirRecibo()">🖨️ Imprimir Ticket</button>
+    </div>
+  </div>
+</div>
+ 
+<!-- PRODUCTO -->
+<div class="overlay" id="mp">
+  <div class="modal">
+    <button class="modal-close" onclick="cerrarModal('mp')">✕</button>
+    <h2 id="mp-titulo">📦 Nuevo Producto</h2>
+    <input type="hidden" id="mp-idx" value="-1">
+    <div class="fr2">
+      <div class="fg"><label>Nombre *</label><input id="mp-nombre" type="text" placeholder="Nombre del producto"></div>
+      <div class="fg"><label>SKU</label><input id="mp-sku" type="text" placeholder="Código único"></div>
+    </div>
+    <div class="fr2">
+      <div class="fg"><label>Proveedor</label><select id="mp-prov"></select></div>
+      <div class="fg"><label>Categoría</label><input id="mp-cat" type="text" placeholder="Ej: Electrónica"></div>
+    </div>
+    <div class="fr3">
+      <div class="fg"><label>Cantidad</label><input id="mp-qty" type="number" min="0" placeholder="0"></div>
+      <div class="fg"><label>Costo ($)</label><input id="mp-costo" type="number" min="0" step="0.01" placeholder="0.00"></div>
+      <div class="fg"><label>Precio Venta ($)</label><input id="mp-precio" type="number" min="0" step="0.01" placeholder="0.00" oninput="calcMargen()"></div>
+    </div>
+    <div class="fr2">
+      <div class="fg"><label>Color de Fibra</label>
+        <select id="mp-fibra-color">
+          <option value="">— Sin especificar —</option>
+          <option value="Azul">Azul</option><option value="Naranja">Naranja</option><option value="Verde">Verde</option>
+          <option value="Café">Café</option><option value="Gris">Gris</option><option value="Blanco">Blanco</option>
+          <option value="Rojo">Rojo</option><option value="Negro">Negro</option><option value="Amarillo">Amarillo</option>
+          <option value="Violeta">Violeta</option><option value="Rosa">Rosa</option><option value="Aqua">Aqua</option>
+        </select>
+      </div>
+      <div class="fg"><label>Marca</label>
+        <select id="mp-fibra-marca">
+          <option value="">— Sin especificar —</option>
+          <option value="Sólido">Sólido</option><option value="Multicolor">Multicolor</option><option value="Degradado">Degradado</option>
+        </select>
+      </div>
+    </div>
+    <div class="fr3">
+      <div class="fg"><label>Material Base (Pellets)</label>
+        <select id="mp-fibra-material">
+          <option value="">— Sin especificar —</option>
+          <option value="PBT">PBT</option><option value="PA">PA (Nylon)</option><option value="PP">PP</option><option value="PET">PET</option><option value="Otro">Otro</option>
+        </select>
+      </div>
+      <div class="fg"><label>Hilo de Refuerzo</label>
+        <select id="mp-fibra-hilo">
+          <option value="">— Sin especificar —</option>
+          <option value="Aramida (Kevlar)">Aramida (Kevlar)</option><option value="Fibra de vidrio">Fibra de vidrio</option>
+          <option value="Carbono">Carbono</option><option value="Ninguno">Ninguno</option>
+        </select>
+      </div>
+      <div class="fg"><label>Colorante</label>
+        <select id="mp-fibra-colorante">
+          <option value="">— Sin especificar —</option>
+          <option value="Masterbatch amarillo">Masterbatch amarillo</option><option value="Masterbatch rojo">Masterbatch rojo</option>
+          <option value="Masterbatch azul">Masterbatch azul</option><option value="Masterbatch negro">Masterbatch negro</option>
+          <option value="Masterbatch blanco">Masterbatch blanco</option><option value="Otro">Otro</option>
+        </select>
+      </div>
+    </div>
+    <div class="fg"><label>Descripción / Notas</label><textarea id="mp-desc" rows="2" placeholder="Descripción opcional..."></textarea></div>
+    <div id="mp-margen-info" style="font-size:12px;color:var(--text2);margin-bottom:12px;"></div>
+    <div class="fg"><label>Stock mínimo (alerta)</label><input id="mp-minstock" type="number" min="0" placeholder="5" value="5"></div>
+    <div class="ma"><button class="btn-cncl" onclick="cerrarModal('mp')">Cancelar</button><button class="btn-ok" id="mp-btn-ok" onclick="guardarProducto()">Agregar Producto</button></div>
+  </div>
+</div>
+ 
+<!-- PROVEEDOR -->
+<div class="overlay" id="mpv">
+  <div class="modal">
+    <button class="modal-close" onclick="cerrarModal('mpv')">✕</button>
+    <h2 id="mpv-titulo">🏭 Nuevo Proveedor</h2>
+    <input type="hidden" id="mpv-idx" value="-1">
+ 
+    <div class="sec-title">📋 Datos Generales</div>
+    <div class="fr2">
+      <div class="fg"><label>Nombre de la Empresa *</label><input id="mpv-nombre" type="text"></div>
+      <div class="fg"><label>Persona de Contacto</label><input id="mpv-contacto" type="text"></div>
+    </div>
+    <div class="fr2">
+      <div class="fg"><label>Teléfono</label><input id="mpv-tel" type="tel"></div>
+      <div class="fg"><label>Email</label><input id="mpv-email" type="email"></div>
+    </div>
+ 
+    <div class="sec-title">🪪 Datos Fiscales / Legales</div>
+    <div class="fr3">
+      <div class="fg"><label>RFC</label><input id="mpv-rfc" type="text" placeholder="Ej: XAXX010101000" style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()"></div>
+      <div class="fg"><label>CURP</label><input id="mpv-curp" type="text" placeholder="18 caracteres" style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()"></div>
+      <div class="fg"><label>NSS</label><input id="mpv-nss" type="text" placeholder="Número de Seguridad Social"></div>
+    </div>
+ 
+    <div class="sec-title">📍 Ubicación</div>
+    <div class="fg"><label>Dirección Completa</label><input id="mpv-dir" type="text" placeholder="Calle, número, colonia, ciudad, CP"></div>
+ 
+    <div class="sec-title">📝 Notas</div>
+    <div class="fg"><label>Notas / Condiciones de Pago</label><textarea id="mpv-notas" rows="2" placeholder="Términos de pago, notas especiales..."></textarea></div>
+    <div class="ma"><button class="btn-cncl" onclick="cerrarModal('mpv')">Cancelar</button><button class="btn-ok" id="mpv-btn-ok" onclick="guardarProveedor()">Agregar Proveedor</button></div>
+  </div>
+</div>
+ 
+<!-- MERMA (MULTI-PRODUCTO) -->
+<div class="overlay" id="mm">
+  <div class="modal modal-wide">
+    <button class="modal-close" onclick="cerrarModal('mm')">✕</button>
+    <h2>⚠️ Registrar Merma</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+      <div class="fg"><label>Motivo / Causa</label>
+        <select id="mm-motivo">
+          <option>Producto dañado</option><option>Extravío</option><option>Robo</option><option>Vencimiento</option><option>Error operativo</option><option>Otro</option>
+        </select>
+      </div>
+      <div class="fg"><label>Culpable / Responsable</label>
+        <input type="text" id="mm-culpable" list="mm-culpable-list" placeholder="Empleado o entidad responsable...">
+        <datalist id="mm-culpable-list"></datalist>
+      </div>
+      <div class="fg"><label>Descripción / Detalle</label><input type="text" id="mm-desc" placeholder="Detalles del incidente..."></div>
+    </div>
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px;">➕ Agregar producto dañado</div>
+      <div style="display:grid;grid-template-columns:1fr 120px auto;gap:10px;align-items:flex-end;">
+        <div class="fg" style="margin:0"><label>Producto</label><select id="mm-prod-sel" onchange="mmActualizarStock()"></select></div>
+        <div class="fg" style="margin:0"><label id="mm-stock-lbl" style="white-space:nowrap">Cantidad</label><input type="number" id="mm-qty-sel" min="1" value="1" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:7px;padding:10px 12px;color:var(--white);font-size:13px;outline:none;"></div>
+        <button class="btn btn-red" onclick="mmAgregarItem()" style="align-self:flex-end;white-space:nowrap;">＋ Agregar</button>
+      </div>
+    </div>
+    <div style="margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">⚠️ Productos a dar de baja</div>
+      <div class="tbl-wrap"><div class="tbl-scroll">
+        <table>
+          <thead><tr><th>Producto</th><th>Costo Unit.</th><th>Cantidad</th><th>Costo Perdido</th><th>Ganancia Perdida</th><th></th></tr></thead>
+          <tbody id="mm-lista-tbody">
+            <tr id="mm-lista-empty"><td colspan="6" style="text-align:center;color:var(--text3);padding:20px;font-size:13px;">Agrega productos dañados para continuar</td></tr>
+          </tbody>
+        </table>
+      </div></div>
+    </div>
+    <div class="lp" id="mm-resumen-lp">
+      <div class="lp-row"><span>Total Costo Perdido:</span><span class="lp-val" id="lp-costo">$0</span></div>
+      <div class="lp-row"><span>Total Valor Perdido:</span><span class="lp-val" id="lp-valor">$0</span></div>
+      <div class="lp-row"><span>Total Ganancia Perdida:</span><span class="lp-val" id="lp-gan">$0</span></div>
+    </div>
+    <div class="ma">
+      <button class="btn-cncl" onclick="cerrarModal('mm')">Cancelar</button>
+      <button class="btn-ok" style="background:var(--red);" onclick="guardarMerma()">⚠️ Registrar Merma</button>
+    </div>
+  </div>
+</div>
+ 
+<!-- EMPLEADO -->
+<div class="overlay" id="me">
+  <div class="modal">
+    <button class="modal-close" onclick="cerrarModal('me')">✕</button>
+    <h2 id="me-titulo">👤 Nuevo Empleado</h2>
+    <input type="hidden" id="me-idx" value="-1">
+    <input type="hidden" id="me-foto-data" value="">
+ 
+    <div class="sec-title">📸 Foto / INE para Gafete</div>
+    <div class="foto-upload-area" onclick="document.getElementById('me-foto-input').click()">
+      <img id="me-foto-preview" class="foto-preview" src="" alt="" style="display:none;">
+      <div id="me-foto-placeholder" style="font-size:32px;margin-bottom:6px;">📷</div>
+      <div class="foto-upload-label">Haz clic para subir foto (INE o fotografía)<br><span style="color:var(--text3)">JPG, PNG – se usará en el gafete del colaborador</span></div>
+    </div>
+    <input type="file" id="me-foto-input" accept="image/*" style="display:none;" onchange="cargarFotoEmpleado(this)">
+    <button class="btn btn-outline btn-sm" onclick="quitarFotoEmpleado()" style="margin-bottom:14px;" id="me-foto-quitar" style="display:none">✕ Quitar foto</button>
+ 
+    <div class="sec-title">👤 Datos Personales</div>
+    <div class="fr2">
+      <div class="fg"><label>Nombre Completo *</label><input id="me-nombre" type="text"></div>
+      <div class="fg"><label>ID Colaborador</label><input id="me-idcolab" type="text" placeholder="Ej: EMP-001"></div>
+    </div>
+    <div class="fr2">
+      <div class="fg"><label>Puesto</label>
+        <select id="me-puesto">
+          <option>Cajero</option><option>Cajera</option><option>Vendedor</option><option>Vendedora</option>
+          <option>Gerente</option><option>Almacenista</option><option>Supervisor</option>
+        </select>
+      </div>
+      <div class="fg"><label>Teléfono</label><input id="me-tel" type="tel"></div>
+    </div>
+    <div class="fg"><label>Email</label><input id="me-email" type="email"></div>
+ 
+    <div class="sec-title">🪪 Datos Legales / IMSS</div>
+    <div class="fr3">
+      <div class="fg"><label>CURP</label><input id="me-curp" type="text" placeholder="18 caracteres" style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()"></div>
+      <div class="fg"><label>NSS</label><input id="me-nss" type="text" placeholder="Núm. Seguridad Social"></div>
+      <div class="fg"><label>RFC</label><input id="me-rfc" type="text" placeholder="RFC del colaborador" style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()"></div>
+    </div>
+ 
+    <div class="sec-title">📍 Dirección</div>
+    <div class="fg"><label>Dirección del Colaborador</label><input id="me-dir" type="text" placeholder="Calle, colonia, ciudad..."></div>
+ 
+    <div class="sec-title">📝 Notas</div>
+    <div class="fg"><label>Notas / Turno</label><textarea id="me-notas" rows="2" placeholder="Turno, notas especiales..."></textarea></div>
+    <div class="ma"><button class="btn-cncl" onclick="cerrarModal('me')">Cancelar</button><button class="btn-ok" id="me-btn-ok" onclick="guardarEmpleado()">Agregar Empleado</button></div>
+  </div>
+</div>
+ 
+<!-- DETALLE EMPLEADO -->
+<div class="overlay" id="med">
+  <div class="modal modal-xl">
+    <button class="modal-close" onclick="cerrarModal('med')">✕</button>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;gap:12px;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div class="emp-avatar" id="ed-avatar" style="width:54px;height:54px;font-size:22px;">?</div>
+        <div>
+          <div style="font-size:20px;font-weight:900;color:var(--white);" id="ed-nombre"></div>
+          <div style="font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;" id="ed-puesto"></div>
+          <div style="font-size:11px;color:var(--text3);margin-top:3px;" id="ed-contact"></div>
+          <div style="font-size:11px;color:var(--gold);margin-top:2px;font-family:monospace;" id="ed-idcolab"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-outline btn-sm" onclick="verGafete()">🪪 Ver Gafete</button>
+        <button class="btn btn-outline btn-sm" onclick="editarEmpDesdeDetalle()">✏️ Editar</button>
+        <button class="btn btn-sm btn-red" onclick="eliminarEmpDesdeDetalle()">🗑️ Eliminar</button>
+      </div>
+    </div>
+ 
+    <!-- Datos legales en detalle -->
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;" id="ed-legal-data"></div>
+ 
+    <div class="sg4" id="ed-stats-row"></div>
+    <div class="charts-row">
+      <div class="chart-box"><div class="chart-title">Análisis de Desempeño</div><canvas id="chart-emp" height="120"></canvas></div>
+      <div class="chart-box"><div class="chart-title">Productos más vendidos</div><canvas id="chart-emp-prod" height="120"></canvas></div>
+    </div>
+    <div style="font-size:13px;font-weight:800;color:var(--white);margin-bottom:10px;">Historial de Ventas</div>
+    <div class="tbl-wrap"><div class="tbl-scroll">
+      <table>
+        <thead><tr><th>#</th><th>N° Ticket</th><th>Fecha/Hora</th><th>Producto</th><th>Cant.</th><th>Precio Unit.</th><th>Total</th><th>Ganancia</th><th>Pago</th></tr></thead>
+        <tbody id="ed-vtas"></tbody>
+      </table>
+    </div></div>
+  </div>
+</div>
+ 
+<!-- GAFETE / BADGE COLABORADOR -->
+<div class="overlay" id="m-gafete">
+  <div class="modal" style="max-width:340px;">
+    <button class="modal-close" onclick="cerrarModal('m-gafete')">✕</button>
+    <h2>🪪 Gafete del Colaborador</h2>
+    <div id="gafete-content"></div>
+    <div class="ma">
+      <button class="btn-cncl" onclick="cerrarModal('m-gafete')">Cerrar</button>
+      <button class="btn-ok" onclick="imprimirGafete()">🖨️ Imprimir</button>
+    </div>
+  </div>
+</div>
+ 
+<!-- ALERTAS PANEL -->
+<div class="overlay" id="m-alertas">
+  <div class="modal">
+    <button class="modal-close" onclick="cerrarModal('m-alertas')">✕</button>
+    <h2>🔔 Alertas del Sistema</h2>
+    <div id="alertas-content"></div>
+    <div class="ma"><button class="btn-ok" onclick="cerrarModal('m-alertas')">Entendido</button></div>
+  </div>
+</div>
+ 
+<div class="toast" id="toast"></div>
+ <source>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="index.js"></script>
+<link rel="stylesheet" href="styles.css">
+</body>
+</html>
