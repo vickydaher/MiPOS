@@ -85,42 +85,14 @@ const productos = {
   },
 };
 
-// =================== EMPLEADOS ===================
-const empleados = {
-  todos: async () => {
-    const { data, error } = await supabase.from('empleados').select('*').order('nombre');
-    if (error) throw error;
-    return data;
-  },
-  porId: async (id) => {
-    const { data, error } = await supabase.from('empleados').select('*').eq('id', id).single();
-    if (error) throw error;
-    return data;
-  },
-  crear: async (d) => {
-    const { data, error } = await supabase.from('empleados').insert(d).select().single();
-    if (error) throw error;
-    return data.id;
-  },
-  actualizar: async (d) => {
-    const { id, ...rest } = d;
-    const { error } = await supabase.from('empleados').update(rest).eq('id', id);
-    if (error) throw error;
-  },
-  eliminar: async (id) => {
-    const { error } = await supabase.from('empleados').delete().eq('id', id);
-    if (error) throw error;
-  },
-};
-
 // =================== VENTAS ===================
 const ventas = {
   todas: async () => {
     const { data, error } = await supabase.from('ventas')
-      .select('*, empleados(nombre)')
+      .select('*, usuarios(nombre)')
       .order('fecha', { ascending: false });
     if (error) throw error;
-    return data.map(v => ({ ...v, empleado_nombre: v.empleados?.nombre }));
+    return data.map(v => ({ ...v, empleado_nombre: v.usuarios?.nombre }));
   },
   items: async (venta_id) => {
     const { data, error } = await supabase.from('venta_items').select('*').eq('venta_id', venta_id);
@@ -143,10 +115,10 @@ const ventas = {
     }
     return ticket;
   },
-  porEmpleado: async (empleado_id) => {
+  porUsuario: async (usuario_id) => {
     const { data, error } = await supabase.from('ventas')
       .select('*, venta_items(*)')
-      .eq('empleado_id', empleado_id)
+      .eq('usuario_id', usuario_id)
       .order('fecha', { ascending: false });
     if (error) throw error;
     return data;
@@ -184,7 +156,7 @@ const mermas = {
 // =================== USUARIOS ===================
 const usuarios = {
   todos: async () => {
-    const { data, error } = await supabase.from('usuarios').select('id, username, nombre, rol').order('nombre');
+    const { data, error } = await supabase.from('usuarios').select('id, username, nombre, rol, foto').order('nombre');
     if (error) throw error;
     return data;
   },
@@ -207,4 +179,4 @@ const usuarios = {
   },
 };
 
-module.exports = { iniciarDB, proveedores, productos, empleados, ventas, mermas, usuarios };
+module.exports = { iniciarDB, proveedores, productos, ventas, mermas, usuarios };

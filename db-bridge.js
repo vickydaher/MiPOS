@@ -1,4 +1,6 @@
+window.XLSX = require('xlsx');
 const { iniciarDB, proveedores, productos, ventas, mermas, usuarios } = require('./database');
+if (typeof XLSX === 'undefined') window.XLSX = require('xlsx');
 
 // ==================== CARGA INICIAL ====================
 async function cargarLocal() {
@@ -42,6 +44,7 @@ async function cargarLocal() {
 
     DB.ventas = [];
     const todasVentas = await ventas.todas();
+    console.log('Primera venta:', JSON.stringify(todasVentas[0]));  // ← aquí
     for (const v of todasVentas) {
       const items = await ventas.items(v.id);
       items.forEach(function(item) {
@@ -182,8 +185,7 @@ window.eliminarProveedor = async function(i) {
 // ==================== VENTAS ====================
 window.hacerVenta = async function() {
   if (!mvCarrito.length) { toast('Agrega al menos un producto al carrito', 'error'); return; }
-  var emp = document.getElementById('mv-emp').value;
-  if (!emp) { toast('Selecciona un empleado', 'error'); return; }
+var emp = SESSION.user ? SESSION.user.nombre : 'Desconocido';
 
   for (var i = 0; i < mvCarrito.length; i++) {
     var item = mvCarrito[i];
@@ -191,20 +193,21 @@ window.hacerVenta = async function() {
     if (!p || item.cantidad > p.cantidad) { toast('Stock insuficiente para: ' + item.nombre, 'error'); return; }
   }
 
-  var empObj = DB.empleados.find(function(e) { return e.nombre === emp; });
+  var empObj = SESSION.user;
   var pago = document.getElementById('mv-pago').value;
   var nota = document.getElementById('mv-nota').value.trim();
 
   var totalVenta = mvCarrito.reduce(function(a, item) { return a + item.precio * item.cantidad; }, 0);
   var gananciaVenta = mvCarrito.reduce(function(a, item) { return a + (item.precio - item.costo) * item.cantidad; }, 0);
 
-  var ventaData = {
-    empleado_id: empObj ? empObj._id : null,
-    metodo_pago: pago,
-    nota: nota,
-    total: totalVenta,
-    ganancia: gananciaVenta,
-  };
+  console.log('SESSION.user:', JSON.stringify(SESSION.user));
+var ventaData = {
+  usuario_id: SESSION.user ? SESSION.user.id : null,
+  metodo_pago: pago,
+  nota: nota,
+  total: totalVenta,
+  ganancia: gananciaVenta,
+};
 
   var items = mvCarrito.map(function(item) {
     var p = DB.productos[item.ri];

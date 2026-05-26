@@ -16,6 +16,7 @@ function saveUsers(users) {
 }
 
 function initAuth() {
+  localStorage.removeItem('mipos_session');
   var saved = localStorage.getItem('mipos_session');
   if (saved) {
     try {
@@ -24,9 +25,20 @@ function initAuth() {
     } catch(e) {}
   }
 }
-
+document.getElementById('nu-foto').addEventListener('change', function() {
+  const file = this.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const preview = document.getElementById('nu-foto-preview');
+    preview.src = e.target.result;
+    preview.style.display = 'block';
+    document.getElementById('nu-foto-placeholder').style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+});
 function doLogin() {
-  var username = $$('login-user').value.trim();
+  var username = $$('login-user').value.trim().toLowerCase();
   var password = $$('login-pass').value;
   if (!username || !password) {
     $$('login-error').textContent = 'Ingresa tu usuario y contraseña';
@@ -41,7 +53,7 @@ function doLogin() {
         $$('login-error').textContent = 'Usuario o contraseña incorrectos';
         return;
       }
-      SESSION.user = { username: found.username, nombre: found.nombre, rol: found.rol };
+      SESSION.user = { id: found.id, username: found.username, nombre: found.nombre, rol: found.rol };
       localStorage.setItem('mipos_session', JSON.stringify(SESSION.user));
       $$('login-error').style.display = 'none';
       onLoginSuccess();
@@ -59,14 +71,14 @@ function doLogin() {
       $$('login-error').style.display = 'block';
       return;
     }
-    SESSION.user = { username: found.username, nombre: found.nombre, rol: found.rol };
+    SESSION.user = { id: found.id, username: found.username, nombre: found.nombre, rol: found.rol };
     localStorage.setItem('mipos_session', JSON.stringify(SESSION.user));
     $$('login-error').style.display = 'none';
     onLoginSuccess();
   }
 }
 
-function onLoginSuccess() {
+async function onLoginSuccess() {
   $$('login-screen').style.display = 'none';
   $$('session-nombre').textContent = SESSION.user.nombre;
   var rolEl = $$('session-rol');
@@ -76,7 +88,7 @@ function onLoginSuccess() {
   $$('btn-logout').style.display = 'inline-flex';
   $$('btn-usuarios').style.display = SESSION.user.rol === 'administrador' ? 'inline-flex' : 'none';
   if (typeof window.cargarDB === 'function') {
-    window.cargarDB();
+    await window.cargarDB();
   } else {
     pintarDash();
   }
@@ -113,34 +125,66 @@ function pintarUsuarios() {
 }
 
 function renderUsuarios(users) {
-  var html = '<div class="tbl-wrap"><div class="tbl-scroll"><table>';
-  html += '<thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Acciones</th></tr></thead><tbody>';
-  users.forEach(function(u) {
+  var html = '<div class="emp-grid">';
+  users.forEach(function(u, idx) {
     var isSelf = u.username === SESSION.user.username;
-    var deleteBtn = isSelf
-      ? '<span style="color:var(--text3);font-size:11px;">(sesión actual)</span>'
-      : '<button class="btn btn-sm btn-red" onclick="eliminarUsuario(\'' + (u.id || u.username) + '\')">🗑️ Eliminar</button>';
-    html += '<tr>';
-    html += '<td style="font-weight:600;">' + u.nombre + '</td>';
-    html += '<td style="font-family:monospace;color:var(--text2);">' + u.username + '</td>';
-    html += '<td><span class="role-badge role-' + u.rol + '">' + (u.rol === 'administrador' ? 'Admin' : 'Técnico') + '</span></td>';
-    html += '<td>' + deleteBtn + '</td>';
-    html += '</tr>';
+    var avatarContent = u.foto
+      ? '<img src="' + u.foto + '">'
+      : u.nombre.charAt(0).toUpperCase();
+    html += '<div class="emp-card" onclick="verUsuario(' + idx + ')">';
+    html += '<div class="emp-avatar">' + avatarContent + '</div>';
+    html += '<div class="emp-name">' + u.nombre + '</div>';
+    html += '<div class="emp-role">' + (u.rol === 'administrador' ? '⭐ Administrador' : '🔧 Técnico') + '</div>';
+    html += '<div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;">';
+    if (!isSelf) {
+      html += '<button class="btn btn-sm btn-red" onclick="event.stopPropagation();eliminarUsuario(\'' + (u.id || u.username) + '\')">🗑️</button>';
+    } else {
+      html += '<span style="color:var(--text3);font-size:11px;">(sesión actual)</span>';
+    }
+    html += '</div></div>';
   });
-  html += '</tbody></table></div></div>';
+  html += '</div>';
   $$('usuarios-list').innerHTML = html;
+  window.usuarios_cache = users;
 }
 
-function guardarNuevoUsuario() {
+
+function verUsuario(idx) {
+  var u = window.usuarios_cache[idx];
+  var fotoEl = document.getElementById('gafete-foto');
+  fotoEl.innerHTML = u.foto ? '<img src="' + u.foto + '">' : u.nombre.charAt(0).toUpperCase();
+  document.getElementById('gafete-nombre').textContent = u.nombre;
+  document.getElementById('gafete-puesto').textContent = u.rol === 'administrador' ? '⭐ Administrador' : '🔧 Técnico';
+  document.getElementById('gafete-username').textContent = u.username;
+  document.getElementById('gafete-pass').textContent = u.password || '••••••••';
+  document.getElementById('gafete-id').textContent = 'ID: ' + (u.id || 'local-' + idx);
+  document.getElementById('m-gafete-user').style.display = 'flex';
+}
+
+async function guardarNuevoUsuario() {
   var nombre = $$('nu-nombre').value.trim();
   var username = $$('nu-user').value.trim().toLowerCase().replace(/\s+/g,'_');
   var password = $$('nu-pass').value;
   var rol = $$('nu-rol').value;
   if (!nombre || !username || !password) { toast('Completa todos los campos requeridos', 'error'); return; }
   if (password.length < 4) { toast('La contraseña debe tener al menos 4 caracteres', 'error'); return; }
+
+  // Obtener foto en base64
+  var fotoBase64 = null;
+  var fotoInput = document.getElementById('nu-foto');
+  if (fotoInput && fotoInput.files[0]) {
+    fotoBase64 = await new Promise(function(resolve) {
+      var reader = new FileReader();
+      reader.onload = function(e) { resolve(e.target.result); };
+      reader.readAsDataURL(fotoInput.files[0]);
+    });
+  }
+
   if (typeof window.dbUsuarios !== 'undefined') {
-    window.dbUsuarios.crear({ username: username, password: password, nombre: nombre, rol: rol }).then(function() {
+    window.dbUsuarios.crear({ username: username, password: password, nombre: nombre, rol: rol, foto: fotoBase64 }).then(function() {
       $$('nu-nombre').value = ''; $$('nu-user').value = ''; $$('nu-pass').value = '';
+      document.getElementById('nu-foto').value = '';
+      document.getElementById('nu-foto-preview').style.display = 'none';
       pintarUsuarios();
       toast('Usuario "' + nombre + '" agregado correctamente');
     }).catch(function(e) {
@@ -149,9 +193,11 @@ function guardarNuevoUsuario() {
   } else {
     var users = getUsers();
     if (users.some(function(u){ return u.username === username; })) { toast('Ya existe un usuario con ese nombre', 'error'); return; }
-    users.push({ username: username, password: password, nombre: nombre, rol: rol });
+    users.push({ username: username, password: password, nombre: nombre, rol: rol, foto: fotoBase64 });
     saveUsers(users);
     $$('nu-nombre').value = ''; $$('nu-user').value = ''; $$('nu-pass').value = '';
+    document.getElementById('nu-foto').value = '';
+    document.getElementById('nu-foto-preview').style.display = 'none';
     pintarUsuarios();
     toast('Usuario "' + nombre + '" agregado correctamente');
   }
@@ -323,6 +369,7 @@ function pintarChart(id,type,data,opts){
     type:type,data:data,
     options:{
       responsive:true,
+      maintainAspectRatio:false,
       indexAxis:opts&&opts.horizontal?'y':'x',
       plugins:{legend:{display:!!(opts&&opts.legend),labels:{color:'#888',font:{size:11}}},tooltip:{callbacks:{label:function(c){return type==='doughnut'?' '+c.label+': '+fmtN(c.raw):' '+fmtN(c.raw);}}}},
       scales:type==='doughnut'?{}:{x:{ticks:{color:'#777',font:{size:10}},grid:{color:'#2a2a2a'}},y:{ticks:{color:'#777',font:{size:10}},grid:{color:'#2a2a2a'}}}
@@ -612,35 +659,7 @@ function mvRenderCarrito(){
   $$('mv-total').textContent=fmt(total);
 }
 
-function hacerVenta(){
-  if(!mvCarrito.length){toast('Agrega al menos un producto al carrito','error');return;}
-  var emp=SESSION.user?SESSION.user.nombre:'Desconocido';
-  for(var i=0;i<mvCarrito.length;i++){
-    var item=mvCarrito[i];var p=DB.productos[item.ri];
-    if(!p||item.cantidad>p.cantidad){toast('Stock insuficiente para: '+item.nombre,'error');return;}
-  }
-  ventaCounter++;
-  var ticket=genTicket();
-  var folio='V-'+ventaCounter;
-  var fecha=ahora();var fechaISO=new Date().toISOString();
-  var pago=$$('mv-pago').value;var nota=$$('mv-nota').value.trim();
-  var totalFolio=0;var ventasCreadas=[];
-  mvCarrito.forEach(function(item){
-    var p=DB.productos[item.ri];
-    var total=item.cantidad*item.precio;
-    var costo=item.cantidad*item.costo;
-    var ganancia=total-costo;
-    totalFolio+=total;
-    var v={folio:folio,ticket:ticket,fecha:fecha,fechaISO:fechaISO,producto:p.nombre,sku:item.sku,empleado:emp,cantidad:item.cantidad,precioUnit:item.precio,total:total,costo:costo,ganancia:ganancia,pago:pago,nota:nota};
-    DB.ventas.push(v);
-    p.cantidad-=item.cantidad;
-    ventasCreadas.push(v);
-  });
-  cerrarModal('mv');pintarInv();pintarVtas();
-  toast('Ticket '+ticket+' ('+ventasCreadas.length+' productos): '+fmt(totalFolio)+' ✓');
-  mostrarReciboMulti(ticket,folio,fecha,emp,pago,nota,ventasCreadas,totalFolio);
-  actualizarAlertaBadge();mvCarrito=[];
-}
+
 
 function mostrarReciboMulti(ticket,folio,fecha,emp,pago,nota,items,total){
   var html='<div class="receipt-header">';
@@ -873,44 +892,243 @@ function pintarMerm(){
 
 
 // ==================== EXPORTAR EXCEL ====================
-function exportarExcel(){
-  var wb=XLSX.utils.book_new();
-  var inv=[['Producto','SKU','Proveedor','Categoría','Cantidad','Costo','Precio Venta','Margen %','Valor Total','Estado']].concat(DB.productos.map(function(p){var m=p.precio>0?((p.precio-p.costo)/p.precio*100).toFixed(1):0;return[p.nombre,p.sku,p.proveedor,p.categoria,p.cantidad,p.costo,p.precio,m,p.cantidad*p.precio,p.cantidad<=(p.minstock||5)?'Stock bajo':p.cantidad<=20?'Stock medio':'Stock Completo'];}));
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(inv),'Inventario');
-  var vtas=[['N° Ticket','Folio','Fecha','Producto','SKU','Empleado','Cantidad','Precio Unit.','Total','Costo','Ganancia','Margen %','Método Pago','Nota']].concat(DB.ventas.map(function(v){return[v.ticket||v.folio,v.folio,v.fecha,v.producto,v.sku||'',v.empleado,v.cantidad,v.precioUnit,v.total,v.costo,v.ganancia,v.total>0?((v.ganancia/v.total)*100).toFixed(1):0,v.pago||'',v.nota||''];}));
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(vtas),'Ventas');
-  var merm=[['Fecha','Producto','Motivo / Causa','Culpable / Responsable','Descripción','Cantidad','Costo Perdido','Valor Perdido','Ganancia Perdida']].concat(DB.mermas.map(function(m){return[m.fecha,m.producto,m.motivo,m.culpable||'',m.desc,m.cantidad,m.costo,m.valor,m.ganancia];}));
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(merm),'Mermas');
-  var prov=[['Empresa','Contacto','Teléfono','Email','RFC','CURP','NSS','Dirección','Notas','# Productos']].concat(DB.proveedores.map(function(p){return[p.nombre,p.contacto,p.tel,p.email,p.rfc||'',p.curp||'',p.nss||'',p.dir,p.notas||'',DB.productos.filter(function(pr){return pr.proveedor===p.nombre;}).length];}));
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(prov),'Proveedores');
-  var totalVtas=DB.ventas.reduce(function(a,v){return a+v.total;},0);
-  var totalGan=DB.ventas.reduce(function(a,v){return a+v.ganancia;},0);
-  var totalMerma=DB.mermas.reduce(function(a,m){return a+m.costo;},0);
-  var resumen=[['MiPOS Pro - Reporte General'],['Generado:',ahora()],[''],['VENTAS'],['Total Ingresos',totalVtas],['Total Ganancia',totalGan],['Num. Ventas',DB.ventas.length],['Margen Promedio',totalVtas>0?((totalGan/totalVtas)*100).toFixed(1)+'%':'0%'],[''],['INVENTARIO'],['Total Productos',DB.productos.length],['Valor Inventario',DB.productos.reduce(function(a,p){return a+p.cantidad*p.precio;},0)],['Stock Bajo',getStockBajos().length],[''],['MERMAS'],['Pérdida en Costo',totalMerma],['Num. Mermas',DB.mermas.length]];
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(resumen),'Resumen');
-  XLSX.writeFile(wb,'MiPOS_Reporte_'+new Date().toLocaleDateString('es-MX').replace(/\//g,'-')+'.xlsx');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { shell } = require('electron');
+
+// ─── Estilos reutilizables ───────────────────────────────────────────────────
+var ESTILOS = {
+  // Encabezados por sección
+  hdrAzul:   { font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 }, fill: { fgColor: { rgb: '1F3864' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: { bottom: { style: 'medium', color: { rgb: 'FFFFFF' } } } },
+  hdrVerde:  { font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 }, fill: { fgColor: { rgb: '1E5631' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } },
+  hdrRojo:   { font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 }, fill: { fgColor: { rgb: '7B0000' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } },
+  hdrMorado: { font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 }, fill: { fgColor: { rgb: '2E1F5E' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } },
+  hdrDorado: { font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 }, fill: { fgColor: { rgb: '7D4600' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } },
+  // Filas alternadas
+  filaPar:   { fill: { fgColor: { rgb: 'EBF2FF' } }, alignment: { vertical: 'center' } },
+  filaImpar: { fill: { fgColor: { rgb: 'FFFFFF' } }, alignment: { vertical: 'center' } },
+  // Especiales
+  stockBajo:  { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: 'C0392B' } }, alignment: { horizontal: 'center' } },
+  stockMedio: { font: { bold: true, color: { rgb: '000000' } }, fill: { fgColor: { rgb: 'F39C12' } }, alignment: { horizontal: 'center' } },
+  stockOk:    { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '27AE60' } }, alignment: { horizontal: 'center' } },
+  moneda:     { numFmt: '"$"#,##0.00', alignment: { horizontal: 'right' } },
+  monedaRojo: { numFmt: '"$"#,##0.00', font: { color: { rgb: 'C0392B' } }, alignment: { horizontal: 'right' } },
+  porcentaje: { numFmt: '0.0"%"', alignment: { horizontal: 'center' } },
+  numero:     { alignment: { horizontal: 'center' } },
+  titulo:     { font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 14 }, fill: { fgColor: { rgb: '1F3864' } }, alignment: { horizontal: 'center', vertical: 'center' } },
+  subtitulo:  { font: { bold: true, color: { rgb: '1F3864' }, sz: 11 }, fill: { fgColor: { rgb: 'D6E4FF' } }, alignment: { horizontal: 'left', vertical: 'center' } },
+  labelRes:   { font: { bold: true, color: { rgb: '2C3E50' }, sz: 11 }, fill: { fgColor: { rgb: 'ECF0F1' } } },
+  valorRes:   { font: { bold: true, color: { rgb: '1F3864' }, sz: 12 }, alignment: { horizontal: 'right' } },
+  valorMoneda:{ font: { bold: true, color: { rgb: '1E5631' }, sz: 12 }, numFmt: '"$"#,##0.00', alignment: { horizontal: 'right' } },
+};
+
+function _aplicarEstilo(ws, celda, estilo) {
+  if (!ws[celda]) ws[celda] = { t: 'z', v: '' };
+  ws[celda].s = estilo;
+}
+
+function _estilizarHoja(ws, headers, numRows, colWidths, hdrEstilo, colFormats) {
+  var cols = headers.length;
+  // Encabezados
+  for (var c = 0; c < cols; c++) {
+    var cel = XLSX.utils.encode_cell({ r: 0, c: c });
+    if (ws[cel]) ws[cel].s = hdrEstilo;
+  }
+  // Filas de datos
+  for (var r = 1; r <= numRows; r++) {
+    for (var c = 0; c < cols; c++) {
+      var cel = XLSX.utils.encode_cell({ r: r, c: c });
+      if (!ws[cel]) continue;
+      var base = (r % 2 === 0) ? Object.assign({}, ESTILOS.filaPar) : Object.assign({}, ESTILOS.filaImpar);
+      if (colFormats && colFormats[c]) {
+        ws[cel].s = Object.assign({}, base, colFormats[c]);
+      } else {
+        ws[cel].s = base;
+      }
+    }
+  }
+  // Anchos de columna
+  ws['!cols'] = colWidths.map(function(w) { return { wch: w }; });
+  // Alto de encabezado
+  ws['!rows'] = [{ hpx: 32 }];
+}
+
+function _guardarExcel(wb, nombre) {
+  var ruta = path.join(os.homedir(), 'Desktop', nombre);
+  var buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', cellStyles: true });
+  fs.writeFileSync(ruta, buf);
+  shell.showItemInFolder(ruta);
+}
+
+// ─── EXPORTAR TODO ────────────────────────────────────────────────────────────
+function exportarExcel() {
+  var wb = XLSX.utils.book_new();
+
+  // ── RESUMEN ──
+  var totalVtas = DB.ventas.reduce(function(a,v){return a+v.total;},0);
+  var totalGan  = DB.ventas.reduce(function(a,v){return a+v.ganancia;},0);
+  var totalMerma= DB.mermas.reduce(function(a,m){return a+m.costo;},0);
+  var valInv    = DB.productos.reduce(function(a,p){return a+p.cantidad*p.precio;},0);
+
+  var resData = [
+    ['MiPOS Pro — Reporte General', ''],
+    ['Generado:', ahora()],
+    ['', ''],
+    ['📦 INVENTARIO', ''],
+    ['Total Productos',    DB.productos.length],
+    ['Valor Inventario',   valInv],
+    ['Stock Bajo',         getStockBajos().length],
+    ['', ''],
+    ['💰 VENTAS', ''],
+    ['Total Ingresos',     totalVtas],
+    ['Total Ganancia',     totalGan],
+    ['Num. Ventas',        DB.ventas.length],
+    ['Margen Promedio',    totalVtas>0?parseFloat(((totalGan/totalVtas)*100).toFixed(1)):0],
+    ['', ''],
+    ['⚠️ MERMAS', ''],
+    ['Pérdida en Costo',   totalMerma],
+    ['Num. Mermas',        DB.mermas.length],
+  ];
+  var wsRes = XLSX.utils.aoa_to_sheet(resData);
+  wsRes['!cols'] = [{wch:28},{wch:22}];
+  wsRes['!rows'] = [{hpx:36}];
+  // Título principal
+  wsRes['A1'].s = ESTILOS.titulo;
+  wsRes['B1'].s = ESTILOS.titulo;
+  // Subtítulos de sección
+  [[3,'📦 INVENTARIO'],[8,'💰 VENTAS'],[14,'⚠️ MERMAS']].forEach(function(s){
+    var cel = 'A'+(s[0]+1);
+    if(wsRes[cel]) wsRes[cel].s = ESTILOS.subtitulo;
+    var cel2 = 'B'+(s[0]+1);
+    if(wsRes[cel2]) wsRes[cel2].s = ESTILOS.subtitulo;
+  });
+  // Labels y valores
+  [4,5,6,9,10,11,12,15,16].forEach(function(r){
+    var ca='A'+(r+1), cb='B'+(r+1);
+    if(wsRes[ca]) wsRes[ca].s = ESTILOS.labelRes;
+    if(wsRes[cb]) wsRes[cb].s = ESTILOS.valorRes;
+  });
+  // Monedas
+  ['B6','B10','B11','B16'].forEach(function(c){ if(wsRes[c]) wsRes[c].s = ESTILOS.valorMoneda; });
+  XLSX.utils.book_append_sheet(wb, wsRes, '📋 Resumen');
+
+  // ── INVENTARIO ──
+  var invHeaders = ['Producto','SKU','Proveedor','Categoría','Cantidad','Costo','Precio Venta','Margen %','Valor Total','Estado'];
+  var invRows = DB.productos.map(function(p){
+    var m = p.precio>0?parseFloat(((p.precio-p.costo)/p.precio*100).toFixed(1)):0;
+    return [p.nombre,p.sku,p.proveedor,p.categoria,p.cantidad,p.costo,p.precio,m,p.cantidad*p.precio,
+      p.cantidad<=(p.minstock||5)?'Stock bajo':p.cantidad<=20?'Stock medio':'Stock Completo'];
+  });
+  var wsInv = XLSX.utils.aoa_to_sheet([invHeaders].concat(invRows));
+  _estilizarHoja(wsInv, invHeaders, invRows.length,
+    [30,16,22,18,10,12,14,11,14,14], ESTILOS.hdrAzul,
+    {4:{numFmt:'#,##0',alignment:{horizontal:'center'}}, 5:ESTILOS.moneda, 6:ESTILOS.moneda, 7:ESTILOS.porcentaje, 8:ESTILOS.moneda});
+  // Estado con color
+  invRows.forEach(function(row, i){
+    var cel = XLSX.utils.encode_cell({r:i+1, c:9});
+    if(!wsInv[cel]) return;
+    if(row[9]==='Stock bajo')    wsInv[cel].s = ESTILOS.stockBajo;
+    else if(row[9]==='Stock medio') wsInv[cel].s = ESTILOS.stockMedio;
+    else                            wsInv[cel].s = ESTILOS.stockOk;
+  });
+  XLSX.utils.book_append_sheet(wb, wsInv, '📦 Inventario');
+
+  // ── VENTAS ──
+  var vtasHeaders = ['N° Ticket','Fecha','Producto','Empleado','Cantidad','Precio Unit.','Total','Costo','Ganancia','Margen %','Método Pago','Nota'];
+  var vtasRows = DB.ventas.map(function(v){
+    return [v.ticket||v.folio, v.fecha, v.producto, v.empleado, v.cantidad,
+      v.precioUnit, v.total, v.costo, v.ganancia,
+      v.total>0?parseFloat(((v.ganancia/v.total)*100).toFixed(1)):0, v.pago||'', v.nota||''];
+  });
+  var wsVtas = XLSX.utils.aoa_to_sheet([vtasHeaders].concat(vtasRows));
+  _estilizarHoja(wsVtas, vtasHeaders, vtasRows.length,
+    [22,20,28,18,10,13,13,13,13,11,16,20], ESTILOS.hdrVerde,
+    {4:{numFmt:'#,##0',alignment:{horizontal:'center'}}, 5:ESTILOS.moneda, 6:ESTILOS.moneda, 7:ESTILOS.moneda, 8:ESTILOS.moneda, 9:ESTILOS.porcentaje});
+  XLSX.utils.book_append_sheet(wb, wsVtas, '💰 Ventas');
+
+  // ── MERMAS ──
+  var mermHeaders = ['Fecha','Producto','Motivo','Responsable','Descripción','Cantidad','Costo Perdido','Valor Perdido','Ganancia Perdida'];
+  var mermRows = DB.mermas.map(function(m){
+    return [m.fecha,m.producto,m.motivo,m.culpable||'',m.desc,m.cantidad,m.costo,m.valor,m.ganancia];
+  });
+  var wsMerm = XLSX.utils.aoa_to_sheet([mermHeaders].concat(mermRows));
+  _estilizarHoja(wsMerm, mermHeaders, mermRows.length,
+    [20,28,18,18,24,10,15,15,16], ESTILOS.hdrRojo,
+    {5:{numFmt:'#,##0',alignment:{horizontal:'center'}}, 6:ESTILOS.monedaRojo, 7:ESTILOS.monedaRojo, 8:ESTILOS.monedaRojo});
+  XLSX.utils.book_append_sheet(wb, wsMerm, '⚠️ Mermas');
+
+  // ── PROVEEDORES ──
+  var provHeaders = ['Empresa','Contacto','Teléfono','Email','RFC','CURP','NSS','Dirección','Notas','# Productos'];
+  var provRows = DB.proveedores.map(function(p){
+    return [p.nombre,p.contacto,p.tel,p.email,p.rfc||'',p.curp||'',p.nss||'',p.dir,p.notas||'',
+      DB.productos.filter(function(pr){return pr.proveedor===p.nombre;}).length];
+  });
+  var wsProv = XLSX.utils.aoa_to_sheet([provHeaders].concat(provRows));
+  _estilizarHoja(wsProv, provHeaders, provRows.length,
+    [24,18,14,28,14,18,14,32,24,12], ESTILOS.hdrMorado,
+    {9:{numFmt:'#,##0',alignment:{horizontal:'center'}}});
+  XLSX.utils.book_append_sheet(wb, wsProv, '🏭 Proveedores');
+
+  _guardarExcel(wb, 'MiPOS_Reporte_'+new Date().toLocaleDateString('es-MX').replace(/\//g,'-')+'.xlsx');
   toast('Excel exportado exitosamente 📊');
 }
 
+// ─── EXPORTAR INDIVIDUAL ──────────────────────────────────────────────────────
 function exportarInvExcel(){
-  var inv=[['Producto','SKU','Proveedor','Categoría','Cantidad','Costo','Precio Venta','Margen %','Valor Total','Estado']].concat(DB.productos.map(function(p){var m=p.precio>0?((p.precio-p.costo)/p.precio*100).toFixed(1):0;return[p.nombre,p.sku,p.proveedor,p.categoria,p.cantidad,p.costo,p.precio,m,p.cantidad*p.precio,p.cantidad<=(p.minstock||5)?'Stock bajo':p.cantidad<=20?'Stock medio':'Stock Completo'];}));
-  var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(inv),'Inventario');
-  XLSX.writeFile(wb,'Inventario_'+fechaHoy()+'.xlsx');toast('Inventario exportado 📊');
+  var wb = XLSX.utils.book_new();
+  var headers = ['Producto','SKU','Proveedor','Categoría','Cantidad','Costo','Precio Venta','Margen %','Valor Total','Estado'];
+  var rows = DB.productos.map(function(p){
+    var m=p.precio>0?parseFloat(((p.precio-p.costo)/p.precio*100).toFixed(1)):0;
+    return[p.nombre,p.sku,p.proveedor,p.categoria,p.cantidad,p.costo,p.precio,m,p.cantidad*p.precio,
+      p.cantidad<=(p.minstock||5)?'Stock bajo':p.cantidad<=20?'Stock medio':'Stock Completo'];
+  });
+  var ws = XLSX.utils.aoa_to_sheet([headers].concat(rows));
+  _estilizarHoja(ws,headers,rows.length,[30,16,22,18,10,12,14,11,14,14],ESTILOS.hdrAzul,
+    {4:{numFmt:'#,##0',alignment:{horizontal:'center'}},5:ESTILOS.moneda,6:ESTILOS.moneda,7:ESTILOS.porcentaje,8:ESTILOS.moneda});
+  rows.forEach(function(row,i){
+    var cel=XLSX.utils.encode_cell({r:i+1,c:9});
+    if(!ws[cel])return;
+    ws[cel].s=row[9]==='Stock bajo'?ESTILOS.stockBajo:row[9]==='Stock medio'?ESTILOS.stockMedio:ESTILOS.stockOk;
+  });
+  XLSX.utils.book_append_sheet(wb,ws,'Inventario');
+  _guardarExcel(wb,'Inventario_'+fechaHoy()+'.xlsx');
+  toast('Inventario exportado 📊');
 }
+
 function exportarProvExcel(){
-  var prov=[['Empresa','Contacto','Teléfono','Email','RFC','CURP','NSS','Dirección','Notas']].concat(DB.proveedores.map(function(p){return[p.nombre,p.contacto,p.tel,p.email,p.rfc||'',p.curp||'',p.nss||'',p.dir,p.notas||''];}));
-  var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(prov),'Proveedores');
-  XLSX.writeFile(wb,'Proveedores_'+fechaHoy()+'.xlsx');toast('Proveedores exportados 📊');
+  var wb = XLSX.utils.book_new();
+  var headers = ['Empresa','Contacto','Teléfono','Email','RFC','CURP','NSS','Dirección','Notas'];
+  var rows = DB.proveedores.map(function(p){return[p.nombre,p.contacto,p.tel,p.email,p.rfc||'',p.curp||'',p.nss||'',p.dir,p.notas||''];});
+  var ws = XLSX.utils.aoa_to_sheet([headers].concat(rows));
+  _estilizarHoja(ws,headers,rows.length,[24,18,14,28,14,18,14,32,24],ESTILOS.hdrMorado,null);
+  XLSX.utils.book_append_sheet(wb,ws,'Proveedores');
+  _guardarExcel(wb,'Proveedores_'+fechaHoy()+'.xlsx');
+  toast('Proveedores exportados 📊');
 }
+
 function exportarVtasExcel(){
-  var vtas=[['N° Ticket','Folio','Fecha','Producto','Empleado','Cantidad','Precio Unit.','Total','Ganancia','Pago']].concat(DB.ventas.map(function(v){return[v.ticket||v.folio,v.folio,v.fecha,v.producto,v.empleado,v.cantidad,v.precioUnit,v.total,v.ganancia,v.pago||''];}));
-  var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(vtas),'Ventas');
-  XLSX.writeFile(wb,'Ventas_'+fechaHoy()+'.xlsx');toast('Ventas exportadas 📊');
+  var wb = XLSX.utils.book_new();
+  var headers = ['N° Ticket','Fecha','Producto','Empleado','Cantidad','Precio Unit.','Total','Ganancia','Pago'];
+  var rows = DB.ventas.map(function(v){return[v.ticket||v.folio,v.fecha,v.producto,v.empleado,v.cantidad,v.precioUnit,v.total,v.ganancia,v.pago||''];});
+  var ws = XLSX.utils.aoa_to_sheet([headers].concat(rows));
+  _estilizarHoja(ws,headers,rows.length,[22,20,28,18,10,13,13,13,16],ESTILOS.hdrVerde,
+    {4:{numFmt:'#,##0',alignment:{horizontal:'center'}},5:ESTILOS.moneda,6:ESTILOS.moneda,7:ESTILOS.moneda});
+  XLSX.utils.book_append_sheet(wb,ws,'Ventas');
+  _guardarExcel(wb,'Ventas_'+fechaHoy()+'.xlsx');
+  toast('Ventas exportadas 📊');
 }
+
 function exportarMermExcel(){
-  var merm=[['Fecha','Producto','Motivo / Causa','Culpable / Responsable','Descripción','Cantidad','Costo Perdido','Ganancia Perdida']].concat(DB.mermas.map(function(m){return[m.fecha,m.producto,m.motivo,m.culpable||'',m.desc,m.cantidad,m.costo,m.ganancia];}));
-  var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(merm),'Mermas');
-  XLSX.writeFile(wb,'Mermas_'+fechaHoy()+'.xlsx');toast('Mermas exportadas 📊');
+  var wb = XLSX.utils.book_new();
+  var headers = ['Fecha','Producto','Motivo','Responsable','Descripción','Cantidad','Costo Perdido','Ganancia Perdida'];
+  var rows = DB.mermas.map(function(m){return[m.fecha,m.producto,m.motivo,m.culpable||'',m.desc,m.cantidad,m.costo,m.ganancia];});
+  var ws = XLSX.utils.aoa_to_sheet([headers].concat(rows));
+  _estilizarHoja(ws,headers,rows.length,[20,28,18,18,24,10,15,16],ESTILOS.hdrRojo,
+    {5:{numFmt:'#,##0',alignment:{horizontal:'center'}},6:ESTILOS.monedaRojo,7:ESTILOS.monedaRojo});
+  XLSX.utils.book_append_sheet(wb,ws,'Mermas');
+  _guardarExcel(wb,'Mermas_'+fechaHoy()+'.xlsx');
+  toast('Mermas exportadas 📊');
 }
 
 // ==================== ESCÁNER ====================

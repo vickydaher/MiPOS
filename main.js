@@ -19,3 +19,7 @@ app.whenReady().then(createWindow)
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
+app.on('before-quit', () => {
+  // Borrar sesión guardada si la tienes en localStorage o archivo
+});
