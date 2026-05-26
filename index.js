@@ -1,13 +1,190 @@
+// ==================== AUTH ====================
+var SESSION = { user: null };
+
+function getUsers() {
+  var raw = localStorage.getItem('mipos_users');
+  if (!raw) {
+    var defaults = [{ username: 'admin', password: 'admin123', nombre: 'Administrador', rol: 'administrador' }];
+    localStorage.setItem('mipos_users', JSON.stringify(defaults));
+    return defaults;
+  }
+  try { return JSON.parse(raw); } catch(e) { return []; }
+}
+
+function saveUsers(users) {
+  localStorage.setItem('mipos_users', JSON.stringify(users));
+}
+
+function initAuth() {
+  var saved = localStorage.getItem('mipos_session');
+  if (saved) {
+    try {
+      var u = JSON.parse(saved);
+      if (u && u.username && u.rol) { SESSION.user = u; onLoginSuccess(); return; }
+    } catch(e) {}
+  }
+}
+
+function doLogin() {
+  var username = $$('login-user').value.trim();
+  var password = $$('login-pass').value;
+  if (!username || !password) {
+    $$('login-error').textContent = 'Ingresa tu usuario y contraseña';
+    $$('login-error').style.display = 'block';
+    return;
+  }
+  if (typeof window.dbUsuarios !== 'undefined') {
+    $$('login-error').textContent = 'Verificando...';
+    $$('login-error').style.display = 'block';
+    window.dbUsuarios.login(username, password).then(function(found) {
+      if (!found) {
+        $$('login-error').textContent = 'Usuario o contraseña incorrectos';
+        return;
+      }
+      SESSION.user = { username: found.username, nombre: found.nombre, rol: found.rol };
+      localStorage.setItem('mipos_session', JSON.stringify(SESSION.user));
+      $$('login-error').style.display = 'none';
+      onLoginSuccess();
+    }).catch(function() {
+      $$('login-error').textContent = 'Error de conexión con la base de datos';
+    });
+  } else {
+    var users = getUsers();
+    var found = null;
+    for (var i = 0; i < users.length; i++) {
+      if (users[i].username === username && users[i].password === password) { found = users[i]; break; }
+    }
+    if (!found) {
+      $$('login-error').textContent = 'Usuario o contraseña incorrectos';
+      $$('login-error').style.display = 'block';
+      return;
+    }
+    SESSION.user = { username: found.username, nombre: found.nombre, rol: found.rol };
+    localStorage.setItem('mipos_session', JSON.stringify(SESSION.user));
+    $$('login-error').style.display = 'none';
+    onLoginSuccess();
+  }
+}
+
+function onLoginSuccess() {
+  $$('login-screen').style.display = 'none';
+  $$('session-nombre').textContent = SESSION.user.nombre;
+  var rolEl = $$('session-rol');
+  rolEl.textContent = SESSION.user.rol === 'administrador' ? 'Admin' : 'Técnico';
+  rolEl.className = 'role-badge role-' + SESSION.user.rol;
+  $$('session-info').style.display = 'flex';
+  $$('btn-logout').style.display = 'inline-flex';
+  $$('btn-usuarios').style.display = SESSION.user.rol === 'administrador' ? 'inline-flex' : 'none';
+  if (typeof window.cargarDB === 'function') {
+    window.cargarDB();
+  } else {
+    pintarDash();
+  }
+}
+
+function doLogout() {
+  SESSION.user = null;
+  localStorage.removeItem('mipos_session');
+  $$('login-user').value = '';
+  $$('login-pass').value = '';
+  $$('login-error').style.display = 'none';
+  $$('session-info').style.display = 'none';
+  $$('btn-logout').style.display = 'none';
+  $$('btn-usuarios').style.display = 'none';
+  $$('login-screen').style.display = 'flex';
+  setTimeout(function(){ $$('login-user').focus(); }, 50);
+}
+
+function abrirGestorUsuarios() {
+  if (!SESSION.user || SESSION.user.rol !== 'administrador') return;
+  pintarUsuarios();
+  abrirMod('m-usuarios');
+}
+
+function pintarUsuarios() {
+  if (typeof window.dbUsuarios !== 'undefined') {
+    $$('usuarios-list').innerHTML = '<div style="color:var(--text2);font-size:13px;padding:12px;">Cargando...</div>';
+    window.dbUsuarios.todos().then(renderUsuarios).catch(function(e) {
+      $$('usuarios-list').innerHTML = '<div style="color:var(--red);font-size:13px;">Error: ' + e.message + '</div>';
+    });
+  } else {
+    renderUsuarios(getUsers());
+  }
+}
+
+function renderUsuarios(users) {
+  var html = '<div class="tbl-wrap"><div class="tbl-scroll"><table>';
+  html += '<thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Acciones</th></tr></thead><tbody>';
+  users.forEach(function(u) {
+    var isSelf = u.username === SESSION.user.username;
+    var deleteBtn = isSelf
+      ? '<span style="color:var(--text3);font-size:11px;">(sesión actual)</span>'
+      : '<button class="btn btn-sm btn-red" onclick="eliminarUsuario(\'' + (u.id || u.username) + '\')">🗑️ Eliminar</button>';
+    html += '<tr>';
+    html += '<td style="font-weight:600;">' + u.nombre + '</td>';
+    html += '<td style="font-family:monospace;color:var(--text2);">' + u.username + '</td>';
+    html += '<td><span class="role-badge role-' + u.rol + '">' + (u.rol === 'administrador' ? 'Admin' : 'Técnico') + '</span></td>';
+    html += '<td>' + deleteBtn + '</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div></div>';
+  $$('usuarios-list').innerHTML = html;
+}
+
+function guardarNuevoUsuario() {
+  var nombre = $$('nu-nombre').value.trim();
+  var username = $$('nu-user').value.trim().toLowerCase().replace(/\s+/g,'_');
+  var password = $$('nu-pass').value;
+  var rol = $$('nu-rol').value;
+  if (!nombre || !username || !password) { toast('Completa todos los campos requeridos', 'error'); return; }
+  if (password.length < 4) { toast('La contraseña debe tener al menos 4 caracteres', 'error'); return; }
+  if (typeof window.dbUsuarios !== 'undefined') {
+    window.dbUsuarios.crear({ username: username, password: password, nombre: nombre, rol: rol }).then(function() {
+      $$('nu-nombre').value = ''; $$('nu-user').value = ''; $$('nu-pass').value = '';
+      pintarUsuarios();
+      toast('Usuario "' + nombre + '" agregado correctamente');
+    }).catch(function(e) {
+      toast(e.message.includes('unique') ? 'Ya existe un usuario con ese nombre' : 'Error: ' + e.message, 'error');
+    });
+  } else {
+    var users = getUsers();
+    if (users.some(function(u){ return u.username === username; })) { toast('Ya existe un usuario con ese nombre', 'error'); return; }
+    users.push({ username: username, password: password, nombre: nombre, rol: rol });
+    saveUsers(users);
+    $$('nu-nombre').value = ''; $$('nu-user').value = ''; $$('nu-pass').value = '';
+    pintarUsuarios();
+    toast('Usuario "' + nombre + '" agregado correctamente');
+  }
+}
+
+function eliminarUsuario(idOrUsername) {
+  if (typeof window.dbUsuarios !== 'undefined') {
+    window.dbUsuarios.eliminar(idOrUsername).then(function() {
+      pintarUsuarios();
+      toast('Usuario eliminado');
+    }).catch(function(e) {
+      toast('Error: ' + e.message, 'error');
+    });
+  } else {
+    var users = getUsers();
+    var idx = parseInt(idOrUsername);
+    if (isNaN(idx) || !users[idx]) return;
+    if (users[idx].username === SESSION.user.username) { toast('No puedes eliminar tu propia cuenta', 'error'); return; }
+    var nombre = users[idx].nombre;
+    users.splice(idx, 1);
+    saveUsers(users);
+    pintarUsuarios();
+    toast('Usuario "' + nombre + '" eliminado');
+  }
+}
+
 // ==================== ESTADO ====================
 var DB = {
   productos: [],
   proveedores: [],
   ventas: [],
   mermas: [],
-  empleados: [],
 };
-var empDetalleIdx=-1;
-var empChartInst=null, empChartProdInst=null;
 var dashCharts={};
 var ventaCounter=1000;
 
@@ -40,7 +217,7 @@ function actualizarReloj(){var d=new Date();$$('hdr-clock').textContent=d.toLoca
 actualizarReloj();setInterval(actualizarReloj,1000);
 
 // ==================== TABS ====================
-var TABS=['dash','inv','prov','vtas','merm','emp'];
+var TABS=['dash','inv','prov','vtas','merm'];
 function irTab(id){
   TABS.forEach(function(t){
     $$('page-'+t).classList.remove('active');
@@ -53,7 +230,6 @@ function irTab(id){
   else if(id==='prov')pintarProv();
   else if(id==='vtas')pintarVtas();
   else if(id==='merm')pintarMerm();
-  else if(id==='emp')pintarEmp();
 }
 
 // ==================== ALERTAS ====================
@@ -84,7 +260,6 @@ function pintarDash(){
     '<div class="sc"><div class="sc-label">Ganancia Total</div><div class="sc-val c-gold">'+fmt(totalGan)+'</div><div class="sc-sub">Margen: '+margen+'%</div></div>'+
     '<div class="sc"><div class="sc-label">Valor Inventario</div><div class="sc-val c-white">'+fmt(valorInv)+'</div><div class="sc-sub">'+DB.productos.length+' productos</div></div>'+
     '<div class="sc"><div class="sc-label">Pérdida Mermas</div><div class="sc-val c-red">'+fmt(totalMerma)+'</div><div class="sc-sub">'+DB.mermas.length+' mermas</div></div>'+
-    '<div class="sc"><div class="sc-label">Empleados</div><div class="sc-val c-blue">'+DB.empleados.length+'</div><div class="sc-sub">Activos</div></div>'+
     '<div class="sc"><div class="sc-label">Stock Bajo</div><div class="sc-val '+(bajos.length>0?'c-red':'c-green')+'">'+bajos.length+'</div><div class="sc-sub">'+(bajos.length>0?'Requieren atención':'Todo en orden ✓')+'</div></div>';
 
   var ap='';
@@ -354,8 +529,8 @@ var mvCarrito=[];
 function abrirModal(id){
   if(id==='mv'){
     mvCarrito=[];
-    var empSel=$$('mv-emp');
-    empSel.innerHTML=DB.empleados.map(function(e){return '<option value="'+e.nombre+'">'+e.nombre+' - '+e.puesto+'</option>';}).join('');
+    var empDisplay=$$('mv-emp-display');
+    if(empDisplay)empDisplay.textContent=SESSION.user?SESSION.user.nombre:'—';
     mvRellenarSelector();
     $$('mv-nota').value='';
     mvRenderCarrito();
@@ -439,8 +614,7 @@ function mvRenderCarrito(){
 
 function hacerVenta(){
   if(!mvCarrito.length){toast('Agrega al menos un producto al carrito','error');return;}
-  var emp=$$('mv-emp').value;
-  if(!emp){toast('Selecciona un empleado','error');return;}
+  var emp=SESSION.user?SESSION.user.nombre:'Desconocido';
   for(var i=0;i<mvCarrito.length;i++){
     var item=mvCarrito[i];var p=DB.productos[item.ri];
     if(!p||item.cantidad>p.cantidad){toast('Stock insuficiente para: '+item.nombre,'error');return;}
@@ -514,7 +688,8 @@ function limpiarFiltrosVtas(){
 
 function pintarVtas(){
   var vs=$$('fil-vemp');var vc=vs.value;
-  vs.innerHTML='<option value="">Todos</option>'+DB.empleados.map(function(e){return '<option>'+e.nombre+'</option>';}).join('');
+  var empNames=[...new Set(DB.ventas.map(function(v){return v.empleado;}))].filter(Boolean).sort();
+  vs.innerHTML='<option value="">Todos</option>'+empNames.map(function(n){return '<option>'+n+'</option>';}).join('');
   if(vc)vs.value=vc;
   var vp=$$('fil-vprod');var vpc=vp.value;
   var pnames=[...new Set(DB.ventas.map(function(v){return v.producto;}))].sort();
@@ -559,8 +734,6 @@ var mmLista=[];
 
 function abrirNuevaMerma(){
   mmLista=[];
-  var dl=$$('mm-culpable-list');
-  if(dl)dl.innerHTML=DB.empleados.map(function(e){return '<option value="'+e.nombre+'">'+e.nombre+' ('+e.puesto+')</option>';}).join('');
   mmRellenarSelector();
   $$('mm-desc').value='';$$('mm-culpable').value='';
   mmRenderLista();abrirMod('mm');
@@ -698,174 +871,6 @@ function pintarMerm(){
   }).join('');
 }
 
-// ==================== EMPLEADOS ====================
-function cargarFotoEmpleado(input){
-  var file=input.files[0];if(!file)return;
-  var reader=new FileReader();
-  reader.onload=function(e){
-    $$('me-foto-data').value=e.target.result;
-    var prev=$$('me-foto-preview');
-    prev.src=e.target.result;prev.style.display='block';
-    $$('me-foto-placeholder').style.display='none';
-    $$('me-foto-quitar').style.display='inline-flex';
-  };
-  reader.readAsDataURL(file);
-}
-
-function quitarFotoEmpleado(){
-  $$('me-foto-data').value='';
-  $$('me-foto-preview').style.display='none';
-  $$('me-foto-preview').src='';
-  $$('me-foto-placeholder').style.display='block';
-  $$('me-foto-quitar').style.display='none';
-  $$('me-foto-input').value='';
-}
-
-function pintarEmp(){
-  var grid=$$('grid-emp');
-  if(!DB.empleados.length){grid.innerHTML='<div class="tbl-empty">No hay empleados registrados</div>';return;}
-  grid.innerHTML=DB.empleados.map(function(e,i){
-    var ev=DB.ventas.filter(function(v){return v.empleado===e.nombre;});
-    var tv=ev.reduce(function(a,v){return a+v.total;},0);
-    var tg=ev.reduce(function(a,v){return a+v.ganancia;},0);
-    var colores=['#f5a623','#22c55e','#3b82f6','#a855f7','#ef4444','#06b6d4'];
-    var col=colores[i%colores.length];
-    var avatarContent=e.foto
-      ? '<img src="'+e.foto+'" alt="'+e.nombre+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">'
-      : initiales(e.nombre);
-    return '<div class="emp-card" onclick="verDetalleEmp('+i+')">'
-      +'<div class="emp-avatar" style="background:'+(e.foto?'transparent':col)+'">'+avatarContent+'</div>'
-      +'<div class="emp-name">'+e.nombre+'</div>'
-      +'<div class="emp-role">'+e.puesto+(e.idcolab?' · <span style="color:var(--text3);font-size:10px;font-family:monospace">'+e.idcolab+'</span>':'')+'</div>'
-      +'<div class="emp-stats">'
-        +'<div class="ecs"><div class="ecs-lbl">Ventas</div><div class="ecs-val c-green">'+ev.length+'</div></div>'
-        +'<div class="ecs"><div class="ecs-lbl">Ingresos</div><div class="ecs-val c-gold" style="font-size:13px">'+fmt(tv)+'</div></div>'
-        +'<div class="ecs"><div class="ecs-lbl">Ganancia</div><div class="ecs-val" style="color:'+col+';font-size:13px">'+fmt(tg)+'</div></div>'
-        +'<div class="ecs"><div class="ecs-lbl">Margen</div><div class="ecs-val c-white" style="font-size:13px">'+(tv>0?((tg/tv)*100).toFixed(1):0)+'%</div></div>'
-      +'</div></div>';
-  }).join('');
-}
-
-function abrirNuevoEmpleado(){
-  $$('me-idx').value=-1;$$('me-titulo').textContent='👤 Nuevo Empleado';$$('me-btn-ok').textContent='Agregar Empleado';
-  ['me-nombre','me-tel','me-email','me-notas','me-idcolab','me-curp','me-nss','me-rfc','me-dir'].forEach(function(id){$$(id).value='';});
-  $$('me-puesto').value='Cajero';
-  quitarFotoEmpleado();
-  abrirMod('me');
-}
-
-function guardarEmpleado(){
-  var nombre=$$('me-nombre').value.trim();
-  if(!nombre){toast('El nombre es obligatorio','error');return;}
-  var obj={
-    nombre:nombre,puesto:$$('me-puesto').value,tel:$$('me-tel').value.trim(),email:$$('me-email').value.trim(),notas:$$('me-notas').value.trim(),
-    idcolab:$$('me-idcolab').value.trim(),curp:$$('me-curp').value.trim(),nss:$$('me-nss').value.trim(),rfc:$$('me-rfc').value.trim(),
-    dir:$$('me-dir').value.trim(),foto:$$('me-foto-data').value
-  };
-  var i=parseInt($$('me-idx').value);
-  if(i>=0){DB.empleados[i]=obj;toast('Empleado actualizado ✓');}
-  else{DB.empleados.push(obj);toast('Empleado agregado ✓');}
-  $$('me-btn-ok').textContent='Agregar Empleado';
-  cerrarModal('me');pintarEmp();
-}
-
-function verDetalleEmp(i){
-  empDetalleIdx=i;var e=DB.empleados[i];
-  var ev=DB.ventas.filter(function(v){return v.empleado===e.nombre;});
-  var tv=ev.reduce(function(a,v){return a+v.total;},0);
-  var tinv=ev.reduce(function(a,v){return a+v.costo;},0);
-  var tg=ev.reduce(function(a,v){return a+v.ganancia;},0);
-  var margen=tv>0?((tg/tv)*100).toFixed(1):0;
-  var colores=['#f5a623','#22c55e','#3b82f6','#a855f7','#ef4444','#06b6d4'];
-  var col=colores[i%colores.length];
-  var av=$$('ed-avatar');
-  if(e.foto){av.innerHTML='<img src="'+e.foto+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">';av.style.background='transparent';}
-  else{av.innerHTML=initiales(e.nombre);av.style.background=col;}
-  $$('ed-nombre').textContent=e.nombre;$$('ed-puesto').textContent=e.puesto;
-  $$('ed-contact').textContent=(e.tel?'📞 '+e.tel:'')+(e.email?' · ✉️ '+e.email:'');
-  $$('ed-idcolab').textContent=e.idcolab?'🪪 ID: '+e.idcolab:'';
-  var legalItems=[
-    e.idcolab?{l:'ID Colaborador',v:e.idcolab,c:'var(--gold)'}:null,
-    e.curp?{l:'CURP',v:e.curp,c:'var(--text)'}:null,
-    e.nss?{l:'NSS',v:e.nss,c:'var(--text)'}:null,
-    e.rfc?{l:'RFC',v:e.rfc,c:'var(--text)'}:null,
-    e.dir?{l:'Dirección',v:e.dir,c:'var(--text2)'}:null,
-  ].filter(Boolean);
-  $$('ed-legal-data').innerHTML=legalItems.length
-    ? legalItems.map(function(x){return '<div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px;">'+x.l+'</div><div style="font-size:12px;font-weight:700;color:'+x.c+';font-family:monospace;">'+x.v+'</div></div>';}).join('')
-    : '<div style="color:var(--text3);font-size:12px;">Sin datos legales registrados</div>';
-  $$('ed-stats-row').innerHTML=
-    '<div class="sc"><div class="sc-label">Total Ventas</div><div class="sc-val c-green">'+fmt(tv)+'</div></div>'+
-    '<div class="sc"><div class="sc-label">Inversión (Costo)</div><div class="sc-val c-gold">'+fmt(tinv)+'</div></div>'+
-    '<div class="sc"><div class="sc-label">Ganancia</div><div class="sc-val" style="color:'+col+'">'+fmt(tg)+'</div></div>'+
-    '<div class="sc"><div class="sc-label">Margen de Ganancia</div><div class="sc-val c-white">'+margen+'%</div></div>';
-  var vt=$$('ed-vtas');
-  if(!ev.length){vt.innerHTML='<tr><td colspan="9" class="tbl-empty">Sin ventas registradas</td></tr>';}
-  else{vt.innerHTML=[...ev].reverse().map(function(v,ii){var realIdx=ev.length-ii;return '<tr><td style="color:var(--text3);font-size:11px">'+realIdx+'</td><td><span class="ticket-badge">'+(v.ticket||v.folio||'—')+'</span></td><td style="color:var(--text2);font-size:12px">'+v.fecha+'</td><td class="td-bold">'+v.producto+'</td><td>'+v.cantidad+'</td><td>'+fmt(v.precioUnit)+'</td><td style="color:var(--green);font-weight:800">'+fmt(v.total)+'</td><td style="color:var(--gold);font-weight:700">'+fmt(v.ganancia)+'</td><td style="color:var(--text2);font-size:12px">'+(v.pago||'—')+'</td></tr>';}).join('');}
-  if(empChartInst)empChartInst.destroy();
-  if(empChartProdInst)empChartProdInst.destroy();
-  var ctx=$$('chart-emp').getContext('2d');
-  empChartInst=new Chart(ctx,{type:'bar',data:{labels:['Ingresos','Costo','Ganancia'],datasets:[{data:[tv,tinv,tg],backgroundColor:['#22c55e','#f5a623',col],borderRadius:7,barThickness:70}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#777'},grid:{color:'#2a2a2a'}},y:{ticks:{color:'#777'},grid:{color:'#2a2a2a'}}}}});
-  var byProd={};
-  ev.forEach(function(v){byProd[v.producto]=(byProd[v.producto]||0)+v.total;});
-  var prods=Object.keys(byProd).sort(function(a,b){return byProd[b]-byProd[a];}).slice(0,5);
-  var ctx2=$$('chart-emp-prod').getContext('2d');
-  empChartProdInst=new Chart(ctx2,{type:'bar',data:{labels:prods.length?prods:['Sin datos'],datasets:[{data:prods.map(function(k){return byProd[k];}),backgroundColor:CHART_COLORS,borderRadius:5}]},options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#777'},grid:{color:'#2a2a2a'}},y:{ticks:{color:'#777',font:{size:10}},grid:{color:'#2a2a2a'}}}}});
-  abrirMod('med');
-}
-
-function editarEmpDesdeDetalle(){
-  if(empDetalleIdx<0)return;
-  var e=DB.empleados[empDetalleIdx];
-  cerrarModal('med');
-  $$('me-idx').value=empDetalleIdx;$$('me-titulo').textContent='✏️ Editar Empleado';$$('me-btn-ok').textContent='Guardar Cambios';
-  $$('me-nombre').value=e.nombre;$$('me-puesto').value=e.puesto;
-  $$('me-tel').value=e.tel||'';$$('me-email').value=e.email||'';$$('me-notas').value=e.notas||'';
-  $$('me-idcolab').value=e.idcolab||'';$$('me-curp').value=e.curp||'';
-  $$('me-nss').value=e.nss||'';$$('me-rfc').value=e.rfc||'';$$('me-dir').value=e.dir||'';
-  if(e.foto){
-    $$('me-foto-data').value=e.foto;
-    var prev=$$('me-foto-preview');prev.src=e.foto;prev.style.display='block';
-    $$('me-foto-placeholder').style.display='none';
-    $$('me-foto-quitar').style.display='inline-flex';
-  } else {quitarFotoEmpleado();}
-  abrirMod('me');
-}
-
-function eliminarEmpDesdeDetalle(){
-  if(empDetalleIdx<0)return;
-  if(!confirm('¿Eliminar empleado "'+DB.empleados[empDetalleIdx].nombre+'"?'))return;
-  DB.empleados.splice(empDetalleIdx,1);cerrarModal('med');pintarEmp();toast('Empleado eliminado','info');
-}
-
-// ==================== GAFETE ====================
-function verGafete(){
-  if(empDetalleIdx<0)return;
-  var e=DB.empleados[empDetalleIdx];
-  var colores=['#f5a623','#22c55e','#3b82f6','#a855f7','#ef4444','#06b6d4'];
-  var col=colores[empDetalleIdx%colores.length];
-  var fotoHTML=e.foto
-    ? '<img src="'+e.foto+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" alt="foto">'
-    : '<span style="font-size:30px;font-weight:900;color:'+col+'">'+initiales(e.nombre)+'</span>';
-  var html='<div class="gafete" style="border-color:'+col+'">'
-    +'<div class="gafete-logo">⬡ MiPOS Pro</div>'
-    +'<div class="gafete-foto">'+fotoHTML+'</div>'
-    +'<div class="gafete-nombre">'+e.nombre+'</div>'
-    +'<div class="gafete-puesto" style="color:'+col+'">'+e.puesto+'</div>'
-    +(e.idcolab?'<div class="gafete-id">'+e.idcolab+'</div>':'')
-    +(e.tel?'<div style="font-size:11px;color:var(--text3);margin-top:6px;">📞 '+e.tel+'</div>':'')
-    +'<div class="gafete-strip" style="background:linear-gradient(90deg,'+col+','+col+'aa)"></div>'
-    +'</div>';
-  $$('gafete-content').innerHTML=html;
-  cerrarModal('med');abrirMod('m-gafete');
-}
-
-function imprimirGafete(){
-  var c=$$('gafete-content').innerHTML;
-  var w=window.open('','_blank');
-  w.document.write('<html><head><title>Gafete</title><style>body{background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;font-family:Segoe UI,sans-serif;}.gafete{background:linear-gradient(135deg,#111 0%,#222 100%);border:2px solid #f5a623;border-radius:14px;padding:22px 18px;max-width:260px;text-align:center;position:relative;}.gafete-logo{font-size:11px;font-weight:900;color:#f5a623;letter-spacing:3px;text-transform:uppercase;margin-bottom:10px;opacity:.7;}.gafete-foto{width:80px;height:80px;border-radius:50%;border:3px solid #f5a623;margin:0 auto 10px;background:#2a2a2a;display:flex;align-items:center;justify-content:center;overflow:hidden;}.gafete-foto img{width:100%;height:100%;object-fit:cover;}.gafete-nombre{font-size:16px;font-weight:900;color:#fff;margin-bottom:3px;}.gafete-puesto{font-size:11px;color:#f5a623;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-bottom:10px;}.gafete-id{font-size:12px;color:#999;background:#111;border-radius:6px;padding:5px 12px;display:inline-block;font-family:monospace;letter-spacing:1px;border:1px solid #2e2e2e;}.gafete-strip{height:6px;background:linear-gradient(90deg,#f5a623,#d99214);border-radius:0 0 10px 10px;position:absolute;bottom:0;left:0;right:0;}</style></head><body>'+c+'</body></html>');
-  w.document.close();w.print();
-}
 
 // ==================== EXPORTAR EXCEL ====================
 function exportarExcel(){
@@ -878,8 +883,6 @@ function exportarExcel(){
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(merm),'Mermas');
   var prov=[['Empresa','Contacto','Teléfono','Email','RFC','CURP','NSS','Dirección','Notas','# Productos']].concat(DB.proveedores.map(function(p){return[p.nombre,p.contacto,p.tel,p.email,p.rfc||'',p.curp||'',p.nss||'',p.dir,p.notas||'',DB.productos.filter(function(pr){return pr.proveedor===p.nombre;}).length];}));
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(prov),'Proveedores');
-  var emp=[['Nombre','ID Colaborador','Puesto','Teléfono','Email','CURP','NSS','RFC','Dirección','Notas','Ventas Totales','Ingresos','Ganancia','Margen %']].concat(DB.empleados.map(function(e){var ev=DB.ventas.filter(function(v){return v.empleado===e.nombre;});var tv=ev.reduce(function(a,v){return a+v.total;},0);var tg=ev.reduce(function(a,v){return a+v.ganancia;},0);return[e.nombre,e.idcolab||'',e.puesto,e.tel,e.email,e.curp||'',e.nss||'',e.rfc||'',e.dir||'',e.notas||'',ev.length,tv,tg,tv>0?((tg/tv)*100).toFixed(1):0];}));
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(emp),'Empleados');
   var totalVtas=DB.ventas.reduce(function(a,v){return a+v.total;},0);
   var totalGan=DB.ventas.reduce(function(a,v){return a+v.ganancia;},0);
   var totalMerma=DB.mermas.reduce(function(a,m){return a+m.costo;},0);
@@ -908,11 +911,6 @@ function exportarMermExcel(){
   var merm=[['Fecha','Producto','Motivo / Causa','Culpable / Responsable','Descripción','Cantidad','Costo Perdido','Ganancia Perdida']].concat(DB.mermas.map(function(m){return[m.fecha,m.producto,m.motivo,m.culpable||'',m.desc,m.cantidad,m.costo,m.ganancia];}));
   var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(merm),'Mermas');
   XLSX.writeFile(wb,'Mermas_'+fechaHoy()+'.xlsx');toast('Mermas exportadas 📊');
-}
-function exportarEmpExcel(){
-  var emp=[['Nombre','ID Colaborador','Puesto','Teléfono','Email','CURP','NSS','RFC','Dirección','Ventas','Ingresos','Ganancia']].concat(DB.empleados.map(function(e){var ev=DB.ventas.filter(function(v){return v.empleado===e.nombre;});var tv=ev.reduce(function(a,v){return a+v.total;},0);var tg=ev.reduce(function(a,v){return a+v.ganancia;},0);return[e.nombre,e.idcolab||'',e.puesto,e.tel,e.email,e.curp||'',e.nss||'',e.rfc||'',e.dir||'',ev.length,tv,tg];}));
-  var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(emp),'Empleados');
-  XLSX.writeFile(wb,'Empleados_'+fechaHoy()+'.xlsx');toast('Empleados exportados 📊');
 }
 
 // ==================== ESCÁNER ====================
@@ -996,3 +994,6 @@ document.addEventListener('keydown',function(e){
     },80);
   }
 });
+
+// ==================== INIT ====================
+initAuth();

@@ -1,4 +1,4 @@
-const { iniciarDB, proveedores, productos, empleados, ventas, mermas } = require('./database');
+const { iniciarDB, proveedores, productos, ventas, mermas, usuarios } = require('./database');
 
 // ==================== CARGA INICIAL ====================
 async function cargarLocal() {
@@ -39,22 +39,6 @@ async function cargarLocal() {
       };
     });
 
-    DB.empleados = (await empleados.todos()).map(function(e) {
-      return {
-        _id: e.id,
-        nombre: e.nombre,
-        idcolab: e.id_colab || '',
-        puesto: e.puesto || 'Cajero',
-        tel: e.telefono || '',
-        email: e.email || '',
-        curp: e.curp || '',
-        nss: e.nss || '',
-        rfc: e.rfc || '',
-        dir: e.direccion || '',
-        notas: e.notas || '',
-        foto: e.foto || '',
-      };
-    });
 
     DB.ventas = [];
     const todasVentas = await ventas.todas();
@@ -156,58 +140,43 @@ window.eliminarProducto = async function(ri) {
   toast('Producto eliminado', 'info');
 };
 
+window.guardarProveedor = async function() {
+  var nombre = document.getElementById('mpv-nombre').value.trim();
+  if (!nombre) { toast('El nombre es obligatorio', 'error'); return; }
+
+  var obj = {
+    nombre: nombre,
+    contacto: document.getElementById('mpv-contacto').value.trim(),
+    telefono: document.getElementById('mpv-tel').value.trim(),
+    email: document.getElementById('mpv-email').value.trim(),
+    rfc: document.getElementById('mpv-rfc').value.trim(),
+    curp: document.getElementById('mpv-curp').value.trim(),
+    nss: document.getElementById('mpv-nss').value.trim(),
+    direccion: document.getElementById('mpv-dir').value.trim(),
+    notas: document.getElementById('mpv-notas').value.trim(),
+  };
+
+  var i = parseInt(document.getElementById('mpv-idx').value);
+  if (i >= 0 && DB.proveedores[i] && DB.proveedores[i]._id) {
+    obj.id = DB.proveedores[i]._id;
+    await proveedores.actualizar(obj);
+    toast('Proveedor actualizado ✓');
+  } else {
+    await proveedores.crear(obj);
+    toast('Proveedor agregado ✓');
+  }
+
+  cerrarModal('mpv');
+  await cargarLocal();
+  pintarProv();
+};
+
 window.eliminarProveedor = async function(i) {
   if (!confirm('¿Eliminar "' + DB.proveedores[i].nombre + '"?')) return;
   if (DB.proveedores[i]._id) await proveedores.eliminar(DB.proveedores[i]._id);
   await cargarLocal();
   pintarProv();
   toast('Proveedor eliminado', 'info');
-};
-
-// ==================== EMPLEADOS ====================
-window.guardarEmpleado = async function() {
-  var nombre = document.getElementById('me-nombre').value.trim();
-  if (!nombre) { toast('El nombre es obligatorio', 'error'); return; }
-
-  var obj = {
-    nombre: nombre,
-    id_colab: document.getElementById('me-idcolab').value.trim(),
-    puesto: document.getElementById('me-puesto').value,
-    telefono: document.getElementById('me-tel').value.trim(),
-    email: document.getElementById('me-email').value.trim(),
-    curp: document.getElementById('me-curp').value.trim(),
-    nss: document.getElementById('me-nss').value.trim(),
-    rfc: document.getElementById('me-rfc').value.trim(),
-    direccion: document.getElementById('me-dir').value.trim(),
-    notas: document.getElementById('me-notas').value.trim(),
-    foto: document.getElementById('me-foto-data').value,
-  };
-
-  var i = parseInt(document.getElementById('me-idx').value);
-  if (i >= 0 && DB.empleados[i] && DB.empleados[i]._id) {
-    obj.id = DB.empleados[i]._id;
-    await empleados.actualizar(obj);
-    toast('Empleado actualizado ✓');
-  } else {
-    await empleados.crear(obj);
-    toast('Empleado agregado ✓');
-  }
-
-  document.getElementById('me-btn-ok').textContent = 'Agregar Empleado';
-  cerrarModal('me');
-  await cargarLocal();
-  pintarEmp();
-};
-
-window.eliminarEmpDesdeDetalle = async function() {
-  if (empDetalleIdx < 0) return;
-  var e = DB.empleados[empDetalleIdx];
-  if (!confirm('¿Eliminar empleado "' + e.nombre + '"?')) return;
-  if (e._id) await empleados.eliminar(e._id);
-  cerrarModal('med');
-  await cargarLocal();
-  pintarEmp();
-  toast('Empleado eliminado', 'info');
 };
 
 // ==================== VENTAS ====================
@@ -314,7 +283,11 @@ window.guardarMerma = async function() {
 };
 
 // ==================== INIT ====================
-iniciarDB().then(async function() {
+// Expone usuarios para que el sistema de auth en index.js lo use
+window.dbUsuarios = usuarios;
+
+// Expone cargarDB para que onLoginSuccess() lo llame después del login
+window.cargarDB = async function() {
   await cargarLocal();
   if(typeof pintarDash === 'function') pintarDash();
   if(typeof pintarInv === 'function') pintarInv();
@@ -323,6 +296,8 @@ iniciarDB().then(async function() {
   if(typeof pintarVtas === 'function') pintarVtas();
   if(typeof pintarMerm === 'function') pintarMerm();
   if(typeof actualizarAlertaBadge === 'function') actualizarAlertaBadge();
-}).catch(function(e) {
-  console.error('Error iniciando DB:', e);
+};
+
+iniciarDB().catch(function(e) {
+  console.error('Error conectando a Supabase:', e);
 });

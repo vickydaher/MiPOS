@@ -181,4 +181,30 @@ const mermas = {
   },
 };
 
-module.exports = { iniciarDB, proveedores, productos, empleados, ventas, mermas };
+// =================== USUARIOS ===================
+const usuarios = {
+  todos: async () => {
+    const { data, error } = await supabase.from('usuarios').select('id, username, nombre, rol').order('nombre');
+    if (error) throw error;
+    return data;
+  },
+  login: async (username, password) => {
+    const { data, error } = await supabase.from('usuarios')
+      .select('id, username, nombre, rol')
+      .eq('username', username)
+      .eq('password', password)
+      .single();
+    if (error) return null;
+    return data;
+  },
+  crear: async (d) => {
+    const { error } = await supabase.from('usuarios').insert(d);
+    if (error) throw error;
+  },
+  eliminar: async (id) => {
+    const { error } = await supabase.from('usuarios').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+module.exports = { iniciarDB, proveedores, productos, empleados, ventas, mermas, usuarios };

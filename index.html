@@ -6,7 +6,24 @@
 <title>MiPOS Pro</title>
 </head>
 <body>
- 
+
+<!-- PANTALLA DE INICIO DE SESIÓN -->
+<div id="login-screen" class="login-screen">
+  <div class="login-box">
+    <div class="login-logo">
+      <span style="color:var(--gold);font-size:36px;">⬡</span>
+      <div>
+        <div style="font-size:28px;font-weight:900;color:var(--white);">MiPOS</div>
+        <div style="font-size:10px;font-weight:600;color:var(--gold);text-transform:uppercase;letter-spacing:2px;">Sistema de Punto de Venta</div>
+      </div>
+    </div>
+    <div class="fg"><label>Usuario</label><input type="text" id="login-user" placeholder="Nombre de usuario" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()"></div>
+    <div class="fg"><label>Contraseña</label><input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div id="login-error" class="login-error" style="display:none"></div>
+    <button class="btn btn-gold" style="width:100%;justify-content:center;padding:12px;font-size:14px;" onclick="doLogin()">Iniciar Sesión</button>
+  </div>
+</div>
+
 <!-- HEADER -->
 <div class="hdr">
   <div class="logo">
@@ -24,6 +41,12 @@
     <button class="btn btn-outline btn-sm" onclick="exportarExcel()">📊 Exportar Excel</button>
     <button class="btn btn-outline btn-sm" onclick="abrirModal('mv')">🛒 Nueva Venta</button>
     <button class="btn btn-gold btn-sm" onclick="abrirNuevoProducto()">＋ Producto</button>
+    <div class="session-info" id="session-info">
+      <span id="session-nombre"></span>
+      <span id="session-rol" class="role-badge"></span>
+    </div>
+    <button class="btn btn-outline btn-sm" id="btn-usuarios" onclick="abrirGestorUsuarios()" style="display:none">👤 Usuarios</button>
+    <button class="btn btn-outline btn-sm" id="btn-logout" onclick="doLogout()" style="display:none">🔒 Salir</button>
   </div>
 </div>
  
@@ -34,7 +57,6 @@
   <div class="ntab" id="ntab-prov" onclick="irTab('prov')">🏭 Proveedores</div>
   <div class="ntab" id="ntab-vtas" onclick="irTab('vtas')">💰 Ventas</div>
   <div class="ntab" id="ntab-merm" onclick="irTab('merm')">⚠️ Mermas</div>
-  <div class="ntab" id="ntab-emp" onclick="irTab('emp')">👥 Empleados</div>
 </div>
  
 <!-- =================== DASHBOARD =================== -->
@@ -194,19 +216,7 @@
     </table>
   </div></div>
 </div>
- 
-<!-- =================== EMPLEADOS =================== -->
-<div class="page" id="page-emp">
-  <div class="ph">
-    <div class="ph-title">👥 Empleados</div>
-    <div class="ph-actions">
-      <button class="btn btn-outline btn-sm" onclick="exportarEmpExcel()">📊 Exportar</button>
-      <button class="btn btn-gold btn-sm" onclick="abrirNuevoEmpleado()">＋ Agregar Empleado</button>
-    </div>
-  </div>
-  <div class="emp-grid" id="grid-emp"></div>
-</div>
- 
+
  
 <!-- ====================== MODALES ====================== -->
  
@@ -225,7 +235,7 @@
       <span class="scanner-status on" id="scanner-status">● Listo</span>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-      <div class="fg"><label>Empleado</label><select id="mv-emp"></select></div>
+      <div class="fg"><label>Vendedor</label><div id="mv-emp-display" style="background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:10px 12px;font-size:13px;color:var(--white);"></div></div>
       <div class="fg"><label>Método de pago</label>
         <select id="mv-pago"><option>Efectivo</option><option>Tarjeta de débito</option><option>Tarjeta de crédito</option><option>Transferencia</option></select>
       </div>
@@ -418,106 +428,6 @@
   </div>
 </div>
  
-<!-- EMPLEADO -->
-<div class="overlay" id="me">
-  <div class="modal">
-    <button class="modal-close" onclick="cerrarModal('me')">✕</button>
-    <h2 id="me-titulo">👤 Nuevo Empleado</h2>
-    <input type="hidden" id="me-idx" value="-1">
-    <input type="hidden" id="me-foto-data" value="">
- 
-    <div class="sec-title">📸 Foto / INE para Gafete</div>
-    <div class="foto-upload-area" onclick="document.getElementById('me-foto-input').click()">
-      <img id="me-foto-preview" class="foto-preview" src="" alt="" style="display:none;">
-      <div id="me-foto-placeholder" style="font-size:32px;margin-bottom:6px;">📷</div>
-      <div class="foto-upload-label">Haz clic para subir foto (INE o fotografía)<br><span style="color:var(--text3)">JPG, PNG – se usará en el gafete del colaborador</span></div>
-    </div>
-    <input type="file" id="me-foto-input" accept="image/*" style="display:none;" onchange="cargarFotoEmpleado(this)">
-    <button class="btn btn-outline btn-sm" onclick="quitarFotoEmpleado()" style="margin-bottom:14px;" id="me-foto-quitar" style="display:none">✕ Quitar foto</button>
- 
-    <div class="sec-title">👤 Datos Personales</div>
-    <div class="fr2">
-      <div class="fg"><label>Nombre Completo *</label><input id="me-nombre" type="text"></div>
-      <div class="fg"><label>ID Colaborador</label><input id="me-idcolab" type="text" placeholder="Ej: EMP-001"></div>
-    </div>
-    <div class="fr2">
-      <div class="fg"><label>Puesto</label>
-        <select id="me-puesto">
-          <option>Cajero</option><option>Cajera</option><option>Vendedor</option><option>Vendedora</option>
-          <option>Gerente</option><option>Almacenista</option><option>Supervisor</option>
-        </select>
-      </div>
-      <div class="fg"><label>Teléfono</label><input id="me-tel" type="tel"></div>
-    </div>
-    <div class="fg"><label>Email</label><input id="me-email" type="email"></div>
- 
-    <div class="sec-title">🪪 Datos Legales / IMSS</div>
-    <div class="fr3">
-      <div class="fg"><label>CURP</label><input id="me-curp" type="text" placeholder="18 caracteres" style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()"></div>
-      <div class="fg"><label>NSS</label><input id="me-nss" type="text" placeholder="Núm. Seguridad Social"></div>
-      <div class="fg"><label>RFC</label><input id="me-rfc" type="text" placeholder="RFC del colaborador" style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()"></div>
-    </div>
- 
-    <div class="sec-title">📍 Dirección</div>
-    <div class="fg"><label>Dirección del Colaborador</label><input id="me-dir" type="text" placeholder="Calle, colonia, ciudad..."></div>
- 
-    <div class="sec-title">📝 Notas</div>
-    <div class="fg"><label>Notas / Turno</label><textarea id="me-notas" rows="2" placeholder="Turno, notas especiales..."></textarea></div>
-    <div class="ma"><button class="btn-cncl" onclick="cerrarModal('me')">Cancelar</button><button class="btn-ok" id="me-btn-ok" onclick="guardarEmpleado()">Agregar Empleado</button></div>
-  </div>
-</div>
- 
-<!-- DETALLE EMPLEADO -->
-<div class="overlay" id="med">
-  <div class="modal modal-xl">
-    <button class="modal-close" onclick="cerrarModal('med')">✕</button>
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;gap:12px;flex-wrap:wrap;">
-      <div style="display:flex;align-items:center;gap:14px;">
-        <div class="emp-avatar" id="ed-avatar" style="width:54px;height:54px;font-size:22px;">?</div>
-        <div>
-          <div style="font-size:20px;font-weight:900;color:var(--white);" id="ed-nombre"></div>
-          <div style="font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;" id="ed-puesto"></div>
-          <div style="font-size:11px;color:var(--text3);margin-top:3px;" id="ed-contact"></div>
-          <div style="font-size:11px;color:var(--gold);margin-top:2px;font-family:monospace;" id="ed-idcolab"></div>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn btn-outline btn-sm" onclick="verGafete()">🪪 Ver Gafete</button>
-        <button class="btn btn-outline btn-sm" onclick="editarEmpDesdeDetalle()">✏️ Editar</button>
-        <button class="btn btn-sm btn-red" onclick="eliminarEmpDesdeDetalle()">🗑️ Eliminar</button>
-      </div>
-    </div>
- 
-    <!-- Datos legales en detalle -->
-    <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;" id="ed-legal-data"></div>
- 
-    <div class="sg4" id="ed-stats-row"></div>
-    <div class="charts-row">
-      <div class="chart-box"><div class="chart-title">Análisis de Desempeño</div><canvas id="chart-emp" height="120"></canvas></div>
-      <div class="chart-box"><div class="chart-title">Productos más vendidos</div><canvas id="chart-emp-prod" height="120"></canvas></div>
-    </div>
-    <div style="font-size:13px;font-weight:800;color:var(--white);margin-bottom:10px;">Historial de Ventas</div>
-    <div class="tbl-wrap"><div class="tbl-scroll">
-      <table>
-        <thead><tr><th>#</th><th>N° Ticket</th><th>Fecha/Hora</th><th>Producto</th><th>Cant.</th><th>Precio Unit.</th><th>Total</th><th>Ganancia</th><th>Pago</th></tr></thead>
-        <tbody id="ed-vtas"></tbody>
-      </table>
-    </div></div>
-  </div>
-</div>
- 
-<!-- GAFETE / BADGE COLABORADOR -->
-<div class="overlay" id="m-gafete">
-  <div class="modal" style="max-width:340px;">
-    <button class="modal-close" onclick="cerrarModal('m-gafete')">✕</button>
-    <h2>🪪 Gafete del Colaborador</h2>
-    <div id="gafete-content"></div>
-    <div class="ma">
-      <button class="btn-cncl" onclick="cerrarModal('m-gafete')">Cerrar</button>
-      <button class="btn-ok" onclick="imprimirGafete()">🖨️ Imprimir</button>
-    </div>
-  </div>
-</div>
  
 <!-- ALERTAS PANEL -->
 <div class="overlay" id="m-alertas">
@@ -530,6 +440,34 @@
 </div>
  
 <div class="toast" id="toast"></div>
+
+<!-- GESTIÓN DE USUARIOS (solo administrador) -->
+<div class="overlay" id="m-usuarios">
+  <div class="modal">
+    <button class="modal-close" onclick="cerrarModal('m-usuarios')">✕</button>
+    <h2>👤 Gestión de Usuarios</h2>
+    <div id="usuarios-list"></div>
+    <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px;">
+      <div class="sec-title">➕ Agregar Usuario</div>
+      <div class="fr2">
+        <div class="fg"><label>Nombre Completo *</label><input id="nu-nombre" type="text" placeholder="Ej: Juan Pérez"></div>
+        <div class="fg"><label>Nombre de Usuario *</label><input id="nu-user" type="text" placeholder="juan_perez"></div>
+      </div>
+      <div class="fr2">
+        <div class="fg"><label>Contraseña *</label><input id="nu-pass" type="password" placeholder="••••••••"></div>
+        <div class="fg"><label>Rol</label>
+          <select id="nu-rol">
+            <option value="tecnico">Técnico</option>
+            <option value="administrador">Administrador</option>
+          </select>
+        </div>
+      </div>
+      <div class="ma" style="justify-content:flex-end;">
+        <button class="btn-ok" onclick="guardarNuevoUsuario()">➕ Agregar Usuario</button>
+      </div>
+    </div>
+  </div>
+</div>
  <source>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
