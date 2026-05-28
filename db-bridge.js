@@ -203,6 +203,7 @@ var emp = SESSION.user ? SESSION.user.nombre : 'Desconocido';
   console.log('SESSION.user:', JSON.stringify(SESSION.user));
 var ventaData = {
   usuario_id: SESSION.user ? SESSION.user.id : null,
+  empleado_nombre: SESSION.user ? SESSION.user.nombre : 'Desconocido',
   metodo_pago: pago,
   nota: nota,
   total: totalVenta,

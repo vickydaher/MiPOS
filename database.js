@@ -92,7 +92,7 @@ const ventas = {
       .select('*, usuarios(nombre)')
       .order('fecha', { ascending: false });
     if (error) throw error;
-    return data.map(v => ({ ...v, empleado_nombre: v.usuarios?.nombre }));
+    return data.map(v => ({ ...v, empleado_nombre: v.empleado_nombre || v.usuarios?.nombre || '' })); 
   },
   items: async (venta_id) => {
     const { data, error } = await supabase.from('venta_items').select('*').eq('venta_id', venta_id);
